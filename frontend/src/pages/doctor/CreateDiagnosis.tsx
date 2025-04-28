@@ -14,10 +14,11 @@ import {
   SelectChangeEvent,
   Snackbar,
   Alert,
+  Autocomplete,
 } from '@mui/material';
 import { ArrowBack } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { api } from '../../config';
 
 interface Patient {
   id: number;
@@ -48,7 +49,7 @@ const CreateDiagnosis = () => {
   const fetchPatients = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:8000/api/doctor/patients', {
+      const response = await api.get('/api/doctor/patients', {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -98,20 +99,14 @@ const CreateDiagnosis = () => {
     }
 
     try {
-      const token = localStorage.getItem('token');
-      await axios.post(
-        'http://localhost:8000/api/diagnosis/create',
+      await api.post(
+        '/api/diagnosis/create',
         {
           patient_id: selectedPatient,
           diagnosis,
           symptoms,
           recommendations,
           is_physical: true,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
         }
       );
 

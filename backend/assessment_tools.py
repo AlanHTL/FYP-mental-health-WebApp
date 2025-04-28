@@ -209,6 +209,78 @@ def calculate_phq9_score(responses: List[int]) -> Dict[str, Any]:
         "suicide_risk": responses[8] > 0  # Check if the last question has a non-zero response
     }
 
+# PCL-5 Assessment Tool (PTSD Checklist for DSM-5)
+PCL5_QUESTIONS = [
+    "Repeated, disturbing, and unwanted memories of the stressful experience?",
+    "Repeated, disturbing dreams of the stressful experience?",
+    "Suddenly feeling or acting as if the stressful experience were actually happening again?",
+    "Feeling very upset when something reminded you of the stressful experience?",
+    "Having strong physical reactions when something reminded you of the stressful experience?",
+    "Avoiding memories, thoughts, or feelings related to the stressful experience?",
+    "Avoiding external reminders of the stressful experience?",
+    "Trouble remembering important parts of the stressful experience?",
+    "Having strong negative beliefs about yourself, other people, or the world?",
+    "Blaming yourself or someone else for the stressful experience?",
+    "Having strong negative feelings such as fear, horror, anger, guilt, or shame?",
+    "Loss of interest in activities that you used to enjoy?",
+    "Feeling distant or cut off from other people?",
+    "Trouble experiencing positive feelings?",
+    "Irritable behavior, angry outbursts, or acting aggressively?",
+    "Taking too many risks or doing things that could cause you harm?",
+    "Being 'superalert' or watchful or on guard?",
+    "Feeling jumpy or easily startled?",
+    "Having difficulty concentrating?",
+    "Trouble falling or staying asleep?"
+]
+
+PCL5_SEVERITY = {
+    "Below threshold for PTSD": (0, 31),
+    "Probable PTSD - clinical assessment recommended": (32, 80)
+}
+
+def calculate_pcl5_score(responses: List[int]) -> Dict[str, Any]:
+    """
+    Calculate PCL-5 score from patient responses.
+    
+    Args:
+        responses: List of integers (0-4) corresponding to responses
+                  0 = Not at all
+                  1 = A little bit
+                  2 = Moderately
+                  3 = Quite a bit
+                  4 = Extremely
+    
+    Returns:
+        Dict containing total score and clinical interpretation
+    """
+    if len(responses) != 20:
+        raise ValueError("PCL-5 requires exactly 20 responses")
+    
+    total_score = sum(responses)
+    
+    # Determine severity
+    severity = "Unknown"
+    for sev, (lower, upper) in PCL5_SEVERITY.items():
+        if lower <= total_score <= upper:
+            severity = sev
+    
+    # Define DSM-5 cluster scores
+    intrusion_score = sum(responses[0:5])              # Items 1-5
+    avoidance_score = sum(responses[5:7])              # Items 6-7
+    cognition_mood_score = sum(responses[7:14])        # Items 8-14
+    arousal_reactivity_score = sum(responses[14:20])   # Items 15-20
+    
+    return {
+        "score": total_score,
+        "severity": severity,
+        "subscales": {
+            "intrusion": intrusion_score,
+            "avoidance": avoidance_score,
+            "cognition_mood": cognition_mood_score,
+            "arousal_reactivity": arousal_reactivity_score
+        }
+    }
+
 # Assessment database
 ASSESSMENTS = {
     "DASS-21": {
@@ -246,6 +318,19 @@ ASSESSMENTS = {
         ],
         "scoring_function": calculate_phq9_score,
         "description": "The PHQ-9 is a multipurpose instrument for screening, diagnosing, monitoring and measuring the severity of depression."
+    },
+    "PCL-5": {
+        "name": "PTSD Checklist for DSM-5",
+        "questions": PCL5_QUESTIONS,
+        "options": [
+            "Not at all",
+            "A little bit",
+            "Moderately", 
+            "Quite a bit",
+            "Extremely"
+        ],
+        "scoring_function": calculate_pcl5_score,
+        "description": "The PCL-5 is a 20-item self-report measure that assesses the DSM-5 symptoms of PTSD."
     }
 }
 

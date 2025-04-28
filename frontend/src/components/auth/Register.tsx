@@ -14,7 +14,7 @@ import {
   Grid,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { api } from '../../config';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -45,15 +45,15 @@ const Register = () => {
     e.preventDefault();
     try {
       const endpoint = userType === 'patient' 
-        ? 'http://localhost:8000/api/auth/register/patient'
-        : 'http://localhost:8000/api/auth/register/doctor';
+        ? '/api/auth/register/patient'
+        : '/api/auth/register/doctor';
 
       // Remove phone_number from data if registering as a doctor
       const submitData = userType === 'doctor' 
         ? { ...formData, phone_number: undefined }
         : formData;
 
-      const response = await axios.post(endpoint, submitData);
+      const response = await api.post(endpoint, submitData);
 
       if (response.data.access_token) {
         localStorage.setItem('token', response.data.access_token);

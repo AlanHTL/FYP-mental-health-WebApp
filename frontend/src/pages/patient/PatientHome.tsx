@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Container, Typography, Box, Button } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { api } from '../../config';
 
 interface PatientProfile {
   title: string;
@@ -16,10 +16,7 @@ const PatientHome = () => {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const token = localStorage.getItem('token');
-        const response = await axios.get('http://localhost:8000/api/patients/me', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await api.get('/api/patients/me');
         setProfile(response.data);
       } catch (error) {
         console.error('Failed to fetch profile:', error);

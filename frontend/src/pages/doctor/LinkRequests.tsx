@@ -20,7 +20,7 @@ import {
 } from '@mui/material';
 import { ArrowBack } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { api } from '../../config';
 
 interface LinkRequest {
   id: string;
@@ -55,12 +55,7 @@ const LinkRequests = () => {
 
   const fetchRequests = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:8000/api/linkage/requests', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const response = await api.get('/api/linkage/requests');
       setRequests(response.data.sort((a: LinkRequest, b: LinkRequest) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ));
@@ -76,17 +71,9 @@ const LinkRequests = () => {
 
   const handleAction = async (requestId: string, action: 'approve' | 'reject') => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
-
-      await axios.put(
-        `http://localhost:8000/api/linkage/requests/${requestId}/${action}`,
-        {},
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+      await api.put(
+        `/api/linkage/requests/${requestId}/${action}`,
+        {}
       );
       
       setSnackbar({

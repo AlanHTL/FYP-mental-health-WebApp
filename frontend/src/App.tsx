@@ -15,6 +15,7 @@ import {
 import Register from './components/auth/Register';
 import Login from './components/auth/Login';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import TestConnection from './components/TestConnection';
 
 // Patient pages
 import ChatbotDiagnosis from './pages/patient/ChatbotDiagnosis';
@@ -360,6 +361,9 @@ function App() {
                 </ProtectedRoute>
               }
             />
+
+            {/* Test Connection route */}
+            <Route path="/test" element={<TestConnection />} />
 
             {/* Catch all route */}
             <Route path="*" element={<Navigate to="/login" replace />} />

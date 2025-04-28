@@ -17,6 +17,7 @@ from routers.auth import get_current_user
 from datetime import datetime
 from llm_agents import MentalHealthChatbot
 from assessment_tools import get_assessment_list
+import uuid
 
 router = APIRouter()
 chatbot = MentalHealthChatbot()
@@ -187,15 +188,14 @@ async def start_screening_session(
 
 @router.post("/assessment/start")
 async def start_assessment(
-    session_id: str = Body(...),
-    assessment_id: str = Body(...),
+    request: AssessmentRequest,
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Start the assessment phase after screening.
+    Start an assessment based on the recommended assessment from screening.
     
-    This is the second step where the appropriate assessment is selected
-    based on the screening results.
+    This endpoint is called after screening is complete to start a specific
+    standardized assessment (DASS-21 or PCL-5).
     """
     if current_user["user_type"] != "patient":
         raise HTTPException(
@@ -204,7 +204,7 @@ async def start_assessment(
         )
     
     # Get session data
-    session_data = await conversations_collection.find_one({"id": session_id})
+    session_data = await conversations_collection.find_one({"id": request.session_id})
     if not session_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -218,33 +218,49 @@ async def start_assessment(
             detail="Not authorized to access this session"
         )
     
+    # Check if the screening is complete
+    if session_data.get("status") not in ["screening_complete", "assessment"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Screening must be completed before starting assessment"
+        )
+    
+    # Create patient info from database
+    patient_info = session_data.get("patient_info", {})
+    if not patient_info:
+        patient_info = {
+            "name": f"{current_user['first_name']} {current_user['last_name']}",
+            "age": request.patient_info.age,
+            "gender": request.patient_info.gender or current_user.get("sex")
+        }
+    
     try:
-        # Conduct the assessment
-        assessment_result = await chatbot.conduct_assessment(
-            session_id=session_id,
-            assessment_id=assessment_id,
-            patient_info=session_data["patient_info"],
-            screening_result=session_data["screening_result"]
+        # Start the assessment
+        result = await chatbot.conduct_assessment(
+            session_id=request.session_id,
+            assessment_id=request.assessment_id,
+            patient_info=patient_info
         )
         
-        # Update session status
+        # Update session status in database
         await conversations_collection.update_one(
-            {"id": session_id},
+            {"id": request.session_id},
             {
                 "$set": {
                     "status": "assessment",
-                    "assessment_id": assessment_id,
+                    "assessment_id": request.assessment_id,
                     "updated_at": datetime.utcnow()
                 }
             }
         )
         
+        # Return assessment information
         return {
-            "session_id": session_id,
-            "assessment_id": assessment_id,
-            "message": assessment_result["choices"][0]["message"]["content"],
-            "questions": assessment_result["assessment_details"]["questions"],
-            "options": assessment_result["assessment_details"]["options"]
+            "session_id": request.session_id,
+            "assessment_id": request.assessment_id,
+            "message": result["choices"][0]["message"]["content"],
+            "questions": result["assessment_details"]["questions"],
+            "options": result["assessment_details"]["options"]
         }
     
     except Exception as e:
@@ -261,9 +277,10 @@ async def submit_assessment_responses(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Submit responses to an assessment and get the results.
+    Submit responses to an assessment.
     
-    This completes the assessment phase and prepares for the report generation.
+    This endpoint is called after the patient completes the assessment questions,
+    to process their responses and calculate the assessment results.
     """
     if current_user["user_type"] != "patient":
         raise HTTPException(
@@ -286,45 +303,54 @@ async def submit_assessment_responses(
             detail="Not authorized to access this session"
         )
     
+    # Ensure the correct assessment is being submitted
+    if session_data.get("assessment_id") != assessment_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Expected assessment {session_data.get('assessment_id')}, got {assessment_id}"
+        )
+    
+    # Get patient info
+    patient_info = session_data.get("patient_info", {})
+    
     try:
-        # Process assessment responses
-        assessment_results = await chatbot.process_assessment_responses(
+        # Process the assessment responses
+        result = await chatbot.process_assessment_responses(
             session_id=session_id,
             assessment_id=assessment_id,
             responses=responses,
-            patient_info=session_data["patient_info"]
+            patient_info=patient_info
         )
         
-        # Save assessment results to database
-        result_data = {
-            "id": f"{session_id}_{assessment_id}",
-            "session_id": session_id,
+        # Save the assessment results to the database
+        assessment_result = {
+            "id": str(uuid.uuid4()),
             "patient_id": current_user["id"],
+            "session_id": session_id,
             "assessment_id": assessment_id,
             "responses": responses,
-            "results": assessment_results["numerical_results"],
+            "result": result,
             "created_at": datetime.utcnow()
         }
         
-        await assessment_results_collection.insert_one(result_data)
+        await assessment_results_collection.insert_one(assessment_result)
         
-        # Update session data
+        # Update session status
         await conversations_collection.update_one(
             {"id": session_id},
             {
                 "$set": {
-                    "status": "results",
-                    "assessment_results": assessment_results,
+                    "status": "assessment_complete",
+                    "assessment_result": result,
                     "updated_at": datetime.utcnow()
                 }
             }
         )
         
         return {
-            "session_id": session_id,
             "assessment_id": assessment_id,
-            "results": assessment_results["numerical_results"],
-            "interpretation": assessment_results["interpretation"]["choices"][0]["message"]["content"]
+            "result": result,
+            "interpretation": result.get("interpretation", {}).get("choices", [{}])[0].get("message", {}).get("content", "Assessment completed")
         }
     
     except Exception as e:
@@ -335,23 +361,23 @@ async def submit_assessment_responses(
 
 @router.post("/report/generate")
 async def generate_diagnosis_report(
-    session_id: str = Body(...),
+    request: ReportRequest,
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Generate the final diagnosis report.
+    Generate a comprehensive diagnostic report.
     
-    This is the third and final step where all collected information is
-    synthesized into a comprehensive diagnosis report.
+    This endpoint is called after the assessment is complete to generate a final
+    report summarizing the screening, assessment results, and recommendations.
     """
     if current_user["user_type"] != "patient":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only patients can generate diagnosis reports"
+            detail="Only patients can generate reports"
         )
     
     # Get session data
-    session_data = await conversations_collection.find_one({"id": session_id})
+    session_data = await conversations_collection.find_one({"id": request.session_id})
     if not session_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -365,52 +391,53 @@ async def generate_diagnosis_report(
             detail="Not authorized to access this session"
         )
     
-    # Check if assessment results are available
-    if "assessment_results" not in session_data:
+    # Check if assessment is complete
+    if session_data.get("status") != "assessment_complete":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Assessment results not found for this session"
+            detail="Assessment must be completed before generating a report"
         )
     
+    # Update patient info with any new information
+    patient_info = session_data.get("patient_info", {})
+    patient_info.update({
+        "name": f"{current_user['first_name']} {current_user['last_name']}",
+        "patient_id": current_user["id"],
+        "additional_info": request.additional_info
+    })
+    
     try:
-        # Generate report
+        # Generate the report
         report = await chatbot.generate_report(
-            session_id=session_id,
-            patient_info=session_data["patient_info"],
-            symptoms=session_data["symptoms"],
-            screening_result=session_data["screening_result"],
-            assessment_results=session_data["assessment_results"]
+            session_id=request.session_id,
+            patient_info=patient_info
         )
         
-        # Create diagnosis report
-        diagnosis = {
-            "id": str(datetime.utcnow().timestamp()),
+        # Save the report to the database
+        diagnosis_report = {
+            "id": str(uuid.uuid4()),
             "patient_id": current_user["id"],
-            "diagnosis": report.get("diagnosis", "Preliminary assessment based on symptoms"),
-            "symptoms": session_data["symptoms"],
-            "recommendations": report.get("recommendations", [
-                "Schedule a follow-up with a mental health professional",
-                "Practice stress management techniques",
-                "Maintain a regular sleep schedule"
-            ]),
+            "session_id": request.session_id,
+            "diagnosis": report.get("diagnosis", "Mental health assessment"),
+            "symptoms": session_data.get("symptoms", []),
+            "recommendations": report.get("recommendations", []),
             "created_at": datetime.utcnow(),
             "is_physical": False,
             "llm_analysis": {
-                "screening": session_data["screening_result"],
-                "assessment": session_data["assessment_results"],
+                "screening": session_data.get("screening_result", {}),
+                "assessment": session_data.get("assessment_result", {}),
                 "report": report
             }
         }
         
-        # Save diagnosis report to database
-        await diagnosis_reports_collection.insert_one(diagnosis)
+        await diagnosis_reports_collection.insert_one(diagnosis_report)
         
         # Update session status
         await conversations_collection.update_one(
-            {"id": session_id},
+            {"id": request.session_id},
             {
                 "$set": {
-                    "status": "completed",
+                    "status": "complete",
                     "report": report,
                     "updated_at": datetime.utcnow()
                 }
@@ -418,11 +445,11 @@ async def generate_diagnosis_report(
         )
         
         return {
-            "session_id": session_id,
-            "diagnosis": report.get("diagnosis"),
-            "report": report["choices"][0]["message"]["content"],
+            "report_id": diagnosis_report["id"],
+            "diagnosis": report.get("diagnosis", "Mental health assessment"),
+            "summary": report.get("summary", "Assessment completed"),
             "recommendations": report.get("recommendations", []),
-            "report_id": diagnosis["id"]
+            "full_report": report
         }
     
     except Exception as e:
@@ -438,77 +465,65 @@ async def send_message(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Send a message to the chatbot in an ongoing session.
+    Send a message to the chatbot in an ongoing conversation.
     
-    This allows for interactive conversation during any phase of the assessment.
+    This endpoint is used for back-and-forth communication with the chatbot
+    throughout the screening, assessment, and report generation process.
     """
-    if current_user["user_type"] != "patient":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only patients can send messages to the chatbot"
-        )
-    
-    # Get session data
-    session_data = await conversations_collection.find_one({"id": session_id})
-    if not session_data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found"
-        )
-    
-    # Check if the session belongs to the current user
-    if session_data["patient_id"] != current_user["id"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this session"
-        )
-    
     try:
-        # Send message to chatbot
-        response = await chatbot.handle_message(
-            session_id=session_id,
-            message=message
-        )
+        # Verify the session exists and belongs to the user
+        session_data = await conversations_collection.find_one({"id": session_id})
+        if not session_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found"
+            )
         
-        # Update session data
+        if session_data["patient_id"] != current_user["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this session"
+            )
+        
+        # Process the message
+        result = await chatbot.handle_message(session_id, message)
+        
+        # Update the conversation in the database
         await conversations_collection.update_one(
             {"id": session_id},
             {
-                "$push": {
-                    "messages": {
-                        "role": "user",
-                        "content": message,
-                        "timestamp": datetime.utcnow()
-                    }
-                },
                 "$set": {
-                    "updated_at": datetime.utcnow()
+                    "updated_at": datetime.utcnow(),
+                    "status": result.get("status", session_data.get("status", "screening"))
                 }
             }
         )
         
-        # Add chatbot response to session data
-        if response.get('choices') and len(response['choices']) > 0:
+        # Check if screening is complete and an assessment is recommended
+        if result.get("status") == "screening_complete" and "diagnosis_json" in result:
+            # Store the diagnosis JSON result
             await conversations_collection.update_one(
                 {"id": session_id},
                 {
-                    "$push": {
-                        "messages": {
-                            "role": "assistant",
-                            "content": response['choices'][0]['message']['content'],
-                            "timestamp": datetime.utcnow()
-                        }
+                    "$set": {
+                        "diagnosis_json": result["diagnosis_json"],
+                        "recommended_assessment": result.get("recommended_assessment", "DASS-21")
                     }
                 }
             )
+            
+            # Return the response with assessment information
+            return {
+                "message": result["message"],
+                "diagnosis_json": result["diagnosis_json"],
+                "recommended_assessment": result.get("recommended_assessment", "DASS-21")
+            }
         
-        return {
-            "session_id": session_id,
-            "message": response['choices'][0]['message']['content']
-        }
+        # Return the standard message response
+        return {"message": result["message"]}
     
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error sending message: {str(e)}"
+            detail=f"Error processing message: {str(e)}"
         ) 

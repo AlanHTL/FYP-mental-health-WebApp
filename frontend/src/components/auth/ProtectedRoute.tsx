@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import axios from 'axios';
+import { api } from '../../config';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -22,16 +22,15 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRole }
 
       try {
         // Try both patient and doctor endpoints
-        const headers = { Authorization: `Bearer ${token}` };
         let response;
         
         try {
-          response = await axios.get('http://localhost:8000/api/patients/me', { headers });
+          response = await api.get('/api/patients/me');
           setUserRole('patient');
         } catch (error: any) {
           if (error.response?.status === 403) {
             // If forbidden as patient, try doctor endpoint
-            response = await axios.get('http://localhost:8000/api/doctors/me', { headers });
+            response = await api.get('/api/doctors/me');
             setUserRole('doctor');
           } else {
             throw error;

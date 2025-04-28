@@ -19,7 +19,7 @@ import {
   VisibilityOff as VisibilityOffIcon 
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { api } from '../../config';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -45,7 +45,7 @@ const Login = () => {
     setError('');
     
     try {
-      const response = await axios.post('http://localhost:8000/api/auth/login', formData);
+      const response = await api.post('/api/auth/login', formData);
 
       if (response.data.access_token) {
         localStorage.setItem('token', response.data.access_token);
