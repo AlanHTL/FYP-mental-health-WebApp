@@ -9,9 +9,10 @@ import {
   ListItem,
   ListItemText,
   CircularProgress,
+  Card,
+  CardContent,
 } from '@mui/material';
-import { Send as SendIcon, ArrowBack } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { Send as SendIcon } from '@mui/icons-material';
 import axios from 'axios';
 
 interface Message {
@@ -20,7 +21,6 @@ interface Message {
 }
 
 const ChatbotDiagnosis = () => {
-  const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -37,6 +37,7 @@ const ChatbotDiagnosis = () => {
 
   const startSession = async () => {
     try {
+      setIsLoading(true);
       const token = localStorage.getItem('token');
       const response = await axios.post(
         'http://localhost:8000/api/diagnosis/screening/start',
@@ -57,7 +58,9 @@ const ChatbotDiagnosis = () => {
       setMessages([{ role: 'assistant', content: response.data.message }]);
     } catch (error) {
       console.error('Error starting session:', error);
-      alert('Failed to start chat session');
+      setMessages([{ role: 'assistant', content: 'Sorry, there was an error starting the chat session. Please try again later.' }]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -105,61 +108,104 @@ const ChatbotDiagnosis = () => {
   };
 
   return (
-    <Box sx={{ height: 'calc(100vh - 100px)', display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-        <Button 
-          startIcon={<ArrowBack />} 
-          onClick={() => navigate('/patient/home')}
-          variant="outlined"
-          sx={{ mr: 2 }}
-        >
-          Back to Home
-        </Button>
-        <Typography variant="h5">
-          Mental Health Chatbot
-        </Typography>
-      </Box>
+    <Box sx={{ height: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column' }}>
+      <Card elevation={0} sx={{ mb: 3, borderRadius: 2, bgcolor: 'background.paper' }}>
+        <CardContent>
+          <Typography variant="h5" color="primary" gutterBottom fontWeight={600}>
+            Mental Health Chatbot
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Talk with our AI assistant about your mental health concerns. Your conversation is private and will help us provide personalized assessments.
+          </Typography>
+        </CardContent>
+      </Card>
+      
       <Paper 
-        elevation={3} 
+        elevation={0}
         sx={{ 
           flexGrow: 1, 
           mb: 2, 
           p: 2, 
           overflow: 'auto',
-          maxHeight: 'calc(100vh - 240px)'
+          maxHeight: 'calc(100vh - 240px)',
+          borderRadius: 2,
+          border: '1px solid rgba(0, 0, 0, 0.08)',
+          backgroundColor: '#fafcff'
         }}
       >
-        <List>
-          {messages.map((message, index) => (
-            <ListItem
-              key={index}
-              sx={{
-                justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start',
-                mb: 1,
-              }}
-            >
-              <Paper
-                elevation={1}
+        {isLoading && messages.length === 0 ? (
+          <Box display="flex" justifyContent="center" alignItems="center" height="100%">
+            <CircularProgress size={40} />
+            <Typography variant="body1" color="text.secondary" sx={{ ml: 2 }}>
+              Starting conversation...
+            </Typography>
+          </Box>
+        ) : (
+          <List>
+            {messages.map((message, index) => (
+              <ListItem
+                key={index}
                 sx={{
-                  p: 2,
-                  maxWidth: '70%',
-                  backgroundColor: message.role === 'user' ? 'primary.light' : 'grey.100',
-                  color: message.role === 'user' ? 'white' : 'text.primary',
+                  justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start',
+                  mb: 1.5,
+                  py: 0,
                 }}
               >
-                <ListItemText primary={message.content} />
-              </Paper>
-            </ListItem>
-          ))}
-          {isLoading && (
-            <ListItem sx={{ justifyContent: 'flex-start' }}>
-              <CircularProgress size={20} />
-            </ListItem>
-          )}
-          <div ref={messagesEndRef} />
-        </List>
+                <Paper
+                  elevation={0}
+                  sx={{
+                    p: 2,
+                    maxWidth: '70%',
+                    backgroundColor: message.role === 'user' ? 'primary.light' : 'background.paper',
+                    color: message.role === 'user' ? 'white' : 'text.primary',
+                    borderRadius: message.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                    boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.05)',
+                    border: message.role === 'user' ? 'none' : '1px solid rgba(0, 0, 0, 0.08)',
+                  }}
+                >
+                  <ListItemText 
+                    primary={message.content} 
+                    primaryTypographyProps={{
+                      style: { wordBreak: 'break-word' }
+                    }}
+                  />
+                </Paper>
+              </ListItem>
+            ))}
+            {isLoading && messages.length > 0 && (
+              <ListItem sx={{ justifyContent: 'flex-start', mb: 1.5, py: 0 }}>
+                <Paper
+                  elevation={0}
+                  sx={{
+                    p: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    backgroundColor: 'background.paper',
+                    borderRadius: '16px 16px 16px 4px',
+                    boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.05)',
+                    border: '1px solid rgba(0, 0, 0, 0.08)',
+                  }}
+                >
+                  <CircularProgress size={20} sx={{ mr: 2 }} />
+                  <Typography variant="body2" color="text.secondary">
+                    Thinking...
+                  </Typography>
+                </Paper>
+              </ListItem>
+            )}
+            <div ref={messagesEndRef} />
+          </List>
+        )}
       </Paper>
-      <Box sx={{ display: 'flex', gap: 1 }}>
+      
+      <Box sx={{ 
+        display: 'flex', 
+        gap: 1,
+        backgroundColor: 'background.paper',
+        p: 2,
+        borderRadius: 2,
+        border: '1px solid rgba(0, 0, 0, 0.08)',
+      }}>
         <TextField
           fullWidth
           multiline
@@ -168,13 +214,28 @@ const ChatbotDiagnosis = () => {
           onChange={(e) => setNewMessage(e.target.value)}
           onKeyPress={handleKeyPress}
           placeholder="Type your message..."
-          disabled={isLoading}
+          disabled={isLoading && messages.length === 0}
+          variant="outlined"
+          InputProps={{
+            sx: {
+              borderRadius: 3,
+              backgroundColor: '#fff',
+              '& .MuiOutlinedInput-notchedOutline': {
+                borderColor: 'rgba(0, 0, 0, 0.1)',
+              },
+            }
+          }}
         />
         <Button
           variant="contained"
           onClick={handleSend}
-          disabled={!newMessage.trim() || isLoading}
-          sx={{ minWidth: 100 }}
+          disabled={!newMessage.trim() || isLoading || !sessionId}
+          sx={{ 
+            minWidth: 56, 
+            height: 56, 
+            borderRadius: 3,
+            boxShadow: 'none',
+          }}
         >
           <SendIcon />
         </Button>
