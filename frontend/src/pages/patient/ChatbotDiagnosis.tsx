@@ -263,10 +263,10 @@ const ChatbotDiagnosis = () => {
       case 0: // Screening
         return renderChatInterface();
       case 1: // Assessment Selection
-        return (
+  return (
           <Box sx={{ mt: 3 }}>
             <Card sx={{ mb: 2, p: 2 }}>
-              <CardContent>
+        <CardContent>
                 <Typography variant="h6" gutterBottom>Screening Complete</Typography>
                 <Typography variant="body1" gutterBottom>
                   Based on our conversation, the initial screening suggests:
@@ -275,8 +275,8 @@ const ChatbotDiagnosis = () => {
                   <Box sx={{ my: 2 }}>
                     <Typography variant="subtitle1">
                       Potential condition(s): {diagnosisResult.result.join(', ')}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
                       Confidence: {diagnosisResult.probabilities.map(p => `${p * 100}%`).join(', ')}
                     </Typography>
                   </Box>
@@ -440,7 +440,7 @@ const ChatbotDiagnosis = () => {
                     
                     <Typography variant="subtitle1" gutterBottom>
                       Recommendations:
-                    </Typography>
+          </Typography>
                     <List>
                       {report.recommendations ? 
                         report.recommendations.map((rec: string, index: number) => (
@@ -459,8 +459,8 @@ const ChatbotDiagnosis = () => {
                     </Alert>
                   </Box>
                 )}
-              </CardContent>
-            </Card>
+        </CardContent>
+      </Card>
             {renderChatInterface()}
           </Box>
         );

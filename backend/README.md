@@ -348,4 +348,77 @@ const data = await response.json();
 3. Passwords must be at least 8 characters long
 4. Email addresses must be valid and unique
 5. Phone numbers should be in a valid format
-6. All string fields have appropriate length limits 
+6. All string fields have appropriate length limits
+
+# Backend LLM Agent & Diagnosis API
+
+## Overview
+
+This backend module provides the core logic for a mental health chatbot system, including:
+- **`llm_agents.py`**: Implements the main logic for multi-agent mental health screening, assessment, and report generation using LLMs (Large Language Models) and retrieval-augmented generation (RAG).
+- **`routers/diagnosis.py`**: Exposes FastAPI endpoints for chatbot-driven diagnosis, screening, assessment, and report generation, integrating with the LLM agent logic.
+
+---
+
+## llm_agents.py
+
+### Purpose
+- Orchestrates the chatbot's multi-step workflow: screening, assessment, and report generation.
+- Uses OpenAI (or compatible) LLMs and a FAISS vector store for retrieval-augmented diagnosis.
+- Handles conversation memory, session management, and fallback logic.
+
+### Key Components
+- **RAGScreeningAgent**: Uses retrieval-augmented generation to screen for mental health disorders based on user input and a vector database of disorder criteria.
+- **AssessmentAgent**: (Placeholder) Handles standardized assessments (e.g., DASS-21, PCL-5). Can be extended for more complex logic.
+- **ReportAgent**: (Placeholder) Generates summary reports based on screening and assessment results.
+- **MentalHealthChatbot**: Main orchestrator class, manages sessions and delegates to the above agents.
+
+### Development Notes
+- The FAISS index is loaded from disk and used for semantic search of disorder criteria.
+- The code is designed to be extensible for more advanced assessment/report logic.
+- Fallbacks are provided if the LLM agent or vector store is unavailable.
+
+---
+
+## routers/diagnosis.py
+
+### Purpose
+- Exposes RESTful API endpoints for the chatbot workflow.
+- Handles user authentication, session management, and database integration.
+- Connects frontend requests to the LLM agent logic.
+
+### Key Endpoints
+- `POST /api/diagnosis/screening/start`: Start a new screening session with the chatbot.
+- `POST /api/diagnosis/assessment/start`: Start a standardized assessment (e.g., DASS-21).
+- `POST /api/diagnosis/assessment/submit`: Submit assessment responses and get results.
+- `POST /api/diagnosis/report/generate`: Generate a comprehensive diagnostic report.
+- `POST /api/diagnosis/message`: Send a message to the chatbot in an ongoing session.
+
+### Development Notes
+- Endpoints are designed to work with the current structure of `llm_agents.py`.
+- Session and result data are stored in MongoDB collections.
+- The API is secured with user authentication and role checks.
+- The endpoints are compatible with both legacy and new chatbot workflows.
+
+---
+
+## Usage
+
+1. **Start the FastAPI server** (from the `backend` directory):
+   ```bash
+   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+2. **Interact with the API** using the frontend or tools like Postman/curl.
+3. **Extend the agents** in `llm_agents.py` for more advanced logic as needed.
+
+---
+
+## Extending/Customizing
+- To add new assessments, update `assessment_tools.py` and extend `AssessmentAgent`.
+- To improve report generation, implement more logic in `ReportAgent`.
+- To change the retrieval database, update the FAISS index and vector store logic.
+
+---
+
+## Contact
+For questions or contributions, please contact the project maintainer. 
