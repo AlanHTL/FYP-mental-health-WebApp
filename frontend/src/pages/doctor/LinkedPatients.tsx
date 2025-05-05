@@ -18,10 +18,23 @@ import {
   Tab,
   TextField,
   InputAdornment,
+  Chip,
+  List,
+  ListItem,
+  Divider,
+  ListItemText,
+  Badge,
 } from '@mui/material';
-import { Search as SearchIcon, ArrowBack } from '@mui/icons-material';
+import { 
+  Search as SearchIcon, 
+  ArrowBack, 
+  Description, 
+  LocalHospital, 
+  Psychology,
+  Assignment
+} from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { api } from '../../config';
 
 interface Patient {
   id: number;
@@ -41,6 +54,7 @@ interface DiagnosisReport {
   recommendations: string[];
   created_at: string;
   is_physical: boolean;
+  doctor_id?: number | null;
 }
 
 const LinkedPatients = () => {
@@ -49,6 +63,8 @@ const LinkedPatients = () => {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [reports, setReports] = useState<DiagnosisReport[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [selectedReport, setSelectedReport] = useState<DiagnosisReport | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [tabValue, setTabValue] = useState(0);
 
@@ -58,14 +74,7 @@ const LinkedPatients = () => {
 
   const fetchPatients = async () => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
-      
-      const response = await axios.get('http://localhost:8000/api/doctors/linked-patients', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const response = await api.get('/api/doctors/linked-patients');
       setPatients(response.data);
     } catch (error: any) {
       console.error('Error fetching patients:', error);
@@ -76,14 +85,7 @@ const LinkedPatients = () => {
 
   const fetchPatientReports = async (patientId: number) => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
-      
-      const response = await axios.get(`http://localhost:8000/api/doctors/patient-reports/${patientId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const response = await api.get(`/api/doctors/patient-reports/${patientId}`);
       setReports(response.data.sort((a: DiagnosisReport, b: DiagnosisReport) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ));
@@ -98,6 +100,17 @@ const LinkedPatients = () => {
     setSelectedPatient(patient);
     await fetchPatientReports(patient.id);
     setDialogOpen(true);
+  };
+
+  const handleCreateReport = () => {
+    if (selectedPatient) {
+      navigate('/doctor/reports', { state: { selectedPatientId: selectedPatient.id } });
+    }
+  };
+
+  const handleViewReport = (report: DiagnosisReport) => {
+    setSelectedReport(report);
+    setReportDialogOpen(true);
   };
 
   const formatDate = (dateString: string) => {
@@ -181,6 +194,7 @@ const LinkedPatients = () => {
         </Table>
       </TableContainer>
 
+      {/* Patient Details Dialog */}
       <Dialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
@@ -188,14 +202,32 @@ const LinkedPatients = () => {
         fullWidth
       >
         <DialogTitle>
-          Patient Details - {selectedPatient?.title} {selectedPatient?.first_name}{' '}
-          {selectedPatient?.last_name}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">
+              Patient Details - {selectedPatient?.title} {selectedPatient?.first_name}{' '}
+              {selectedPatient?.last_name}
+            </Typography>
+            <Button 
+              variant="contained" 
+              color="primary" 
+              startIcon={<Assignment />}
+              onClick={handleCreateReport}
+            >
+              Create Report
+            </Button>
+          </Box>
         </DialogTitle>
         <DialogContent>
           <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
             <Tabs value={tabValue} onChange={(_, newValue) => setTabValue(newValue)}>
               <Tab label="Personal Information" />
-              <Tab label="Diagnosis Reports" />
+              <Tab 
+                label={
+                  <Badge badgeContent={reports.length} color="primary">
+                    Diagnosis Reports
+                  </Badge>
+                } 
+              />
             </Tabs>
           </Box>
 
@@ -220,34 +252,142 @@ const LinkedPatients = () => {
           )}
 
           {tabValue === 1 && (
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Date</TableCell>
-                    <TableCell>Diagnosis</TableCell>
-                    <TableCell>Type</TableCell>
-                    <TableCell>Symptoms</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {reports.map((report) => (
-                    <TableRow key={report.id}>
-                      <TableCell>{formatDate(report.created_at)}</TableCell>
-                      <TableCell>{report.diagnosis}</TableCell>
-                      <TableCell>
-                        {report.is_physical ? 'Physical Consultation' : 'Chatbot Diagnosis'}
-                      </TableCell>
-                      <TableCell>{report.symptoms.join(', ')}</TableCell>
-                    </TableRow>
+            <Box>
+              {reports.length === 0 ? (
+                <Typography variant="body1" sx={{ my: 2, textAlign: 'center' }}>
+                  No diagnosis reports available for this patient.
+                </Typography>
+              ) : (
+                <List sx={{ width: '100%' }}>
+                  {reports.map((report, index) => (
+                    <React.Fragment key={report.id}>
+                      <ListItem 
+                        alignItems="flex-start"
+                        secondaryAction={
+                          <Button 
+                            variant="outlined" 
+                            size="small"
+                            onClick={() => handleViewReport(report)}
+                          >
+                            View Details
+                          </Button>
+                        }
+                      >
+                        <ListItemText
+                          primary={
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              {report.is_physical ? 
+                                <LocalHospital color="primary" /> : 
+                                <Psychology color="secondary" />
+                              }
+                              <Typography variant="subtitle1">
+                                {report.diagnosis}
+                              </Typography>
+                              <Typography variant="body2" color="textSecondary">
+                                ({formatDate(report.created_at)})
+                              </Typography>
+                            </Box>
+                          }
+                          secondary={
+                            <Box sx={{ mt: 1 }}>
+                              <Typography variant="body2" color="textSecondary" gutterBottom>
+                                Symptoms:
+                              </Typography>
+                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                {report.symptoms.map((symptom, i) => (
+                                  <Chip 
+                                    key={i} 
+                                    label={symptom} 
+                                    size="small" 
+                                    variant="outlined"
+                                  />
+                                ))}
+                              </Box>
+                            </Box>
+                          }
+                        />
+                      </ListItem>
+                      {index < reports.length - 1 && <Divider component="li" />}
+                    </React.Fragment>
                   ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                </List>
+              )}
+            </Box>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Report Details Dialog */}
+      <Dialog
+        open={reportDialogOpen}
+        onClose={() => setReportDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Description />
+            <Typography variant="h6">
+              Diagnosis Report - {formatDate(selectedReport?.created_at || '')}
+            </Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {selectedReport && (
+            <Box sx={{ mt: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <Chip
+                  icon={selectedReport.is_physical ? <LocalHospital /> : <Psychology />}
+                  label={selectedReport.is_physical ? 'Physical Consultation' : 'Mental Health Assessment'}
+                  color={selectedReport.is_physical ? 'primary' : 'secondary'}
+                />
+              </Box>
+
+              <Typography variant="h6" gutterBottom>
+                Diagnosis
+              </Typography>
+              <Typography paragraph sx={{ pl: 2 }}>
+                {selectedReport.diagnosis}
+              </Typography>
+
+              <Typography variant="h6" gutterBottom>
+                Symptoms
+              </Typography>
+              <Box sx={{ mb: 2, pl: 2 }}>
+                {selectedReport.symptoms.map((symptom, index) => (
+                  <Chip
+                    key={index}
+                    label={symptom}
+                    sx={{ mr: 1, mb: 1 }}
+                  />
+                ))}
+              </Box>
+
+              <Typography variant="h6" gutterBottom>
+                Recommendations
+              </Typography>
+              <Box component="ul" sx={{ pl: 4 }}>
+                {selectedReport.recommendations.map((recommendation, index) => (
+                  <Typography component="li" key={index} paragraph>
+                    {recommendation}
+                  </Typography>
+                ))}
+              </Box>
+
+              <Typography variant="body2" color="textSecondary" sx={{ mt: 2 }}>
+                Report ID: {selectedReport.id}
+              </Typography>
+              <Typography variant="body2" color="textSecondary">
+                Created: {formatDate(selectedReport.created_at)}
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReportDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

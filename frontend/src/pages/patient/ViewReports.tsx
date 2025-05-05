@@ -18,7 +18,7 @@ import {
 } from '@mui/material';
 import { ArrowBack } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { api } from '../../config';
 
 interface DiagnosisReport {
   id: string;
@@ -42,12 +42,7 @@ const ViewReports = () => {
 
   const fetchReports = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:8000/api/diagnosis/history', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const response = await api.get('/api/diagnosis/history');
       setReports(response.data.sort((a: DiagnosisReport, b: DiagnosisReport) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ));

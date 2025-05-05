@@ -11,7 +11,9 @@ from models import (
 from database import (
     diagnosis_reports_collection, 
     assessment_results_collection, 
-    conversations_collection
+    conversations_collection,
+    patients_collection,
+    linkage_requests_collection
 )
 from routers.auth import get_current_user
 from datetime import datetime
@@ -544,4 +546,68 @@ async def send_message(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing message: {str(e)}"
-        ) 
+        )
+
+@router.post("/create")
+async def create_diagnosis_report(
+    patient_id: int = Body(...),
+    diagnosis: str = Body(...),
+    symptoms: List[str] = Body(...),
+    recommendations: List[str] = Body(...),
+    is_physical: bool = Body(True),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Create a diagnosis report for a patient.
+    
+    This endpoint is used by doctors to create a diagnosis report for a patient,
+    which will be visible to both the doctor and the patient.
+    """
+    if current_user["user_type"] != "doctor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only doctors can create diagnosis reports"
+        )
+    
+    # Check if patient exists
+    patient = await patients_collection.find_one({"id": patient_id})
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient not found"
+        )
+    
+    # Check if the doctor is linked to the patient
+    linkage = await linkage_requests_collection.find_one(
+        {"doctor_id": current_user["id"], "patient_id": patient_id, "status": "approved"}
+    )
+    if not linkage:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not linked to this patient"
+        )
+    
+    # Create diagnosis report
+    diagnosis_report = {
+        "id": str(uuid.uuid4()),
+        "patient_id": patient_id,
+        "doctor_id": current_user["id"],
+        "diagnosis": diagnosis,
+        "symptoms": symptoms,
+        "recommendations": recommendations,
+        "created_at": datetime.utcnow(),
+        "is_physical": is_physical
+    }
+    
+    # Insert into database
+    await diagnosis_reports_collection.insert_one(diagnosis_report)
+    
+    return {
+        "id": diagnosis_report["id"],
+        "patient_id": patient_id,
+        "diagnosis": diagnosis,
+        "symptoms": symptoms,
+        "recommendations": recommendations,
+        "created_at": diagnosis_report["created_at"],
+        "is_physical": is_physical
+    } 

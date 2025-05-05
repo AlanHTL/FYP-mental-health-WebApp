@@ -93,15 +93,21 @@ async def create_linkage_request(
             detail="Linkage request already exists"
         )
     
+    # Ensure ID values are integers
+    patient_id = int(current_user["id"])
+    doctor_id = int(doctor_id)
+    
     # Create linkage request
     request = {
         "id": str(datetime.utcnow().timestamp()),
-        "patient_id": current_user["id"],
+        "patient_id": patient_id,
         "doctor_id": doctor_id,
         "status": "pending",
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow()
     }
+    
+    print(f"DEBUG: Creating linkage request - patient_id: {patient_id} (type: {type(patient_id)}), doctor_id: {doctor_id} (type: {type(doctor_id)})")
     
     await linkage_requests_collection.insert_one(request)
     return request
@@ -130,11 +136,19 @@ async def approve_linkage_request(
             detail="Not authorized to approve this request"
         )
     
+    # Ensure IDs are stored as integers
+    patient_id = int(request["patient_id"])
+    doctor_id = int(current_user["id"])
+    
+    print(f"DEBUG: Approving linkage request - patient_id: {patient_id} (type: {type(patient_id)}), doctor_id: {doctor_id} (type: {type(doctor_id)})")
+    
     # Update request status
     await linkage_requests_collection.update_one(
         {"id": request_id},
         {"$set": {
             "status": "approved",
+            "patient_id": patient_id,
+            "doctor_id": doctor_id,
             "updated_at": datetime.utcnow()
         }}
     )

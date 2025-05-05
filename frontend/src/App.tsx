@@ -10,12 +10,14 @@ import {
   NotificationsActive as NotificationsIcon, 
   Assignment as AssignmentIcon, 
   Menu as MenuIcon,
-  Logout as LogoutIcon
+  Logout as LogoutIcon,
+  Help as HelpIcon
 } from '@mui/icons-material';
 import Register from './components/auth/Register';
 import Login from './components/auth/Login';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import TestConnection from './components/TestConnection';
+import Help from './pages/patient/Help';
 
 // Patient pages
 import ChatbotDiagnosis from './pages/patient/ChatbotDiagnosis';
@@ -117,6 +119,7 @@ const patientNavItems = [
   { text: 'Mental Health Chat', icon: <ChatIcon />, path: '/patient/screening' },
   { text: 'My Reports', icon: <HistoryIcon />, path: '/patient/history' },
   { text: 'Connect with Doctors', icon: <PersonIcon />, path: '/patient/doctors' },
+  { text: 'Help Resources', icon: <HelpIcon />, path: '/patient/help' },
 ];
 
 const doctorNavItems = [
@@ -324,6 +327,14 @@ function App() {
               element={
                 <ProtectedRoute allowedRole="patient">
                   <LinkDoctor />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/patient/help"
+              element={
+                <ProtectedRoute allowedRole="patient">
+                  <Help />
                 </ProtectedRoute>
               }
             />
