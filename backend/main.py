@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, patients, doctors, diagnosis, linkage
+from routers import auth, patients, doctors, linkage, chat
 from database import client
 
 app = FastAPI(title="Mental Health Diagnosis System")
@@ -18,8 +18,8 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(patients.router, prefix="/api/patients", tags=["Patients"])
 app.include_router(doctors.router, prefix="/api/doctors", tags=["Doctors"])
-app.include_router(diagnosis.router, prefix="/api/diagnosis", tags=["Diagnosis"])
 app.include_router(linkage.router, prefix="/api/linkage", tags=["Linkage"])
+app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
