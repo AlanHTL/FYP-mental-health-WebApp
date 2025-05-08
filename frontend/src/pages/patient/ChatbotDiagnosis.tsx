@@ -265,8 +265,82 @@ const ChatbotDiagnosis: FC = () => {
       );
     }
 
-    // Default text formatting
-    return content;
+    // Check if this is an emergency message (contains emergency keywords)
+    if (content.includes('emergency') || content.includes('hotline') || content.includes('immediately')) {
+      const paragraphs = content.split(/\n+/);
+      return (
+        <Box sx={{ '& > *': { mb: 1.5 } }}>
+          {paragraphs.map((paragraph, i) => {
+            // Handle numbered lists
+            if (/^\d+\./.test(paragraph)) {
+              return (
+                <Typography key={i} variant="body1" sx={{ 
+                  pl: 2,
+                  fontWeight: 'bold',
+                  color: 'error.main'
+                }}>
+                  {paragraph}
+                </Typography>
+              );
+            }
+            
+            // Handle bullet points
+            if (paragraph.includes('- ')) {
+              const [header, ...points] = paragraph.split('- ');
+              return (
+                <Box key={i}>
+                  {header && (
+                    <Typography variant="body1" sx={{ mb: 1 }}>
+                      {header}
+                    </Typography>
+                  )}
+                  {points.map((point, j) => (
+                    <Typography key={j} variant="body1" sx={{ 
+                      pl: 2,
+                      mb: 0.5,
+                      display: 'flex',
+                      alignItems: 'center',
+                      '&:before': {
+                        content: '"•"',
+                        mr: 1,
+                        color: 'error.main'
+                      }
+                    }}>
+                      {point.trim()}
+                    </Typography>
+                  ))}
+                </Box>
+              );
+            }
+
+            // Handle bold text
+            if (paragraph.includes('**')) {
+              return (
+                <Typography key={i} variant="body1">
+                  {paragraph.split('**').map((part, j) => (
+                    j % 2 === 0 ? part : <strong key={j}>{part}</strong>
+                  ))}
+                </Typography>
+              );
+            }
+
+            // Regular paragraphs
+            return (
+              <Typography key={i} variant="body1">
+                {paragraph}
+              </Typography>
+            );
+          })}
+        </Box>
+      );
+    }
+
+    // Default text formatting with line breaks
+    return (
+      <Typography variant="body1" sx={{ whiteSpace: 'pre-line' }}>
+        {content}
+      </Typography>
+    );
   };
 
   return (
