@@ -42,7 +42,7 @@ try:
     # Initialize chat model
     chat_model = ChatOpenAI(
         model="gpt-3.5-turbo",
-        temperature=0.7,
+        temperature=0.6,
         base_url=os.environ["OPENAI_API_BASE"],
         api_key=os.environ["OPENAI_API_KEY"]
     )
@@ -92,7 +92,17 @@ try:
         try:
             docs = vector_store.similarity_search(query, k=3)
             results = "\n".join([doc.page_content for doc in docs])
-            print(f"Retrieved results: {results}")
+            
+            # Get the current user's ID from the request context
+            # Note: This requires modifying the function signature to accept user_id
+            if hasattr(search_criteria, 'current_user_id'):
+                user_id = search_criteria.current_user_id
+                if user_id in internal_chat_histories:
+                    # Add retrieval results to internal chat history
+                    internal_chat_histories[user_id].append(
+                        AIMessage(content=f"<<<RETRIEVAL_RESULTS>>>\n{results}\n<<<END_RETRIEVAL>>>")
+                    )
+            
             return f"<<<RETRIEVAL_RESULTS>>>\n{results}\n<<<END_RETRIEVAL>>>"
         except Exception as e:
             return f"Error retrieving information: {str(e)}"
@@ -105,67 +115,55 @@ try:
 
     # Create agent prompt
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """Your Name is Dr. Mind, a professional mental disorder screening specialist. You will screen for mental disorders based on the patient's symptoms and return a JSON output of the disorder name and the probability of the diagnosis at the end of the conversation.
+        ("system", """Your Name is Dr. Mind, a professional mental disorder screening specialist. You will screen for mental disorders based on the patient's symptoms through asking questions.
 
 step by step process:
-1. Begin by asking for the patient's name and age in a friendly, professional manner.
-2. Ask about their feelings, physical symptoms, and the duration of these symptoms.
-3. After collecting initial information, use the search_document_database tool to query the mental disorders database with specific symptoms described.
-4. Analyze if the patient's symptoms fulfill the diagnostic criteria from the retrieved information.
-5. Ask follow-up questions if more information is needed to confirm or rule out a diagnosis.
-6. If the criteria are fulfilled or most of the main criteria are met, go to point 10. and end the chat with a diagnosis in JSON format.
-7. If symptoms don't match the first retrieval result, create a new query based on updated patient information and search again.
-8. Limit database searches to a maximum of 3 times per conversation.
-9. After 3 searches, provide the most matching diagnosis based on the conversation history, or consider the patient as normal if most of the criterias are not met.
-10. End the conversation with one JSON output only, remove all other text. : {{"result":["disorder name"], "probabilities":[0.X]}} (where X is a number between 0-9 representing how confident you are in the diagnosis).
+1. Ask about their feelings, why they feel this way, physical symptoms, and the duration of these symptoms.
+2. After collecting initial information, use the search_document_database tool to query the mental disorders database with specific symptoms described.
+3. Analyze if the patient's symptoms fulfill the diagnostic criteria based on the retrieved information in the chat history.
+4. Ask follow-up questions if more information is needed to confirm or classify the disorder based on the retrieved information.
+5. Check chat history, if the retrieved information is already in the chat history, do not use the tool again, just use the retrieved information to make a diagnosis, because the retrieved tools is very costly.
+6. If the criteria are fulfilled or most of the main criteria are met, go to point 8. and output the diagnosis in JSON format.
+7. If symptoms don't match the any disorder of the retrieved result in chat history, you can create a new query search again.
+8. When you think that you find a diagnosis, output the result in JSON format only, Do not conclude any other text, just output the result. example: Dr. Mind: {{"result":["disorder name"], "probabilities":[0.X]}} (where X is a number between 0-9 representing how confident you are in the diagnosis).
 
-     
-Here are examples of how to end conversations with JSON output only:
-
-Example 1:
-Patient: I've been feeling really down for the past few months, can't sleep, and lost interest in everything.
-Dr. Mind: Let me ask you a few questions to understand better. Have you been feeling sad or empty most of the day?
-Patient: Yes, almost every day.
-Dr. Mind: Have you lost interest in activities you used to enjoy?
-Patient: Yes, I don't enjoy anything anymore.
-Dr. Mind: How has your sleep been?
-Patient: I can't sleep at night, but I sleep too much during the day.
-Dr. Mind: Have you had any thoughts about death or suicide?
-Patient: Yes, sometimes I think about it.
-Dr. Mind: {{"result":["Major Depressive Disorder"], "probabilities":[0.8]}}
-
-Example 2:
-Patient: I keep having these thoughts that I can't control, and I have to wash my hands many times.
-Dr. Mind: Can you tell me more about these thoughts?
-Patient: They're about germs and contamination, and I can't stop thinking about them.
-Dr. Mind: How many times do you wash your hands in a day?
-Patient: At least 50 times, sometimes more.
-Dr. Mind: Do you feel you have to do this to prevent something bad from happening?
-Patient: Yes, I feel like if I don't wash my hands, something terrible will happen.
-Dr. Mind: {{"result":["Obsessive-Compulsive Disorder"], "probabilities":[0.9]}}
-
-Example 3:
-Patient: I am a bit nervous about my exam tomorrow.
-Dr. Mind: Do you find it hard to control your worry?
-Patient: No, I can control it.
-Dr. Mind: Do you have any physical symptoms, like trembling or sweating?
-Patient: No, I don't have any physical symptoms.
-Dr. Mind: Have you been having trouble sleeping?
-Patient: No, I sleep well.
-Dr. Mind: {{"result":["Normal"], "probabilities":[0.8]}}
-
-Guidelines:
-- Use a chain-of-thought approach: think step by step and explain your reasoning.
+*Make sure the output to patient follow the Output Guidelines strictly, check the guidelines every time you generate the output. If the output not follow the guidelines, fix it*
+*Output Guidelines:*
+- Think step by step and explain your reasoning.
+- Do not show your thinking in the conversation, remove all the text for the thinking.
+- Do not tell the patient about the retrieved information, for example, do not say "Based on the information retrieved from the database, the patient is likely to have [diagnosis]".
+- Just focus on asking questions for the classification of the disorder.
+- The retrieved information is only for the classification of the disorder, do not tell the patient anything about the retrieved information.
+- Use the tool to search once only, if the chat history already have the retrieved information, do not use the tool again, unless the symptoms don't match the any disorder of the retrieved result in chat history 
 - Be compassionate and professional in your communication.
 - Ask one question at a time to avoid overwhelming the patient.
-- Provide examples answers of the questions you ask
-- When searching the database, create focused queries based on the symptoms.
-- Keep track of how many times you've queried the database in this conversation.
+- Provide examples answers of the questions you are asking.
 - Before making a diagnosis, verify that the patient meets the required criteria.
-- Do not mention any disorder name in the conversation.
-- Once you think that you find a diagnosis, End the conversation.
+- Do not make any prediction about the disorder, like "it seems to align with [diagnosis]" or "it might be [diagnosis]", just focus on asking questions for getting more information.
+- Once you think that you find a diagnosis, output the result in JSON format.
+- For the JSON output, check if there are any text in front of the JSON or after the JSON in the response, if there are, remove them.
+- The patient could be normal, please think step by step before making a diagnosis, normal diagnosis is "result": ["Normal"]
 - For emergency situations or suicidal actions, provide immediate help information: full_text("*\n1. *If you are in an immediately dangerous situation (such as on a rooftop, bridge, or with means of harm):\n- Move to a safe location immediately\n- Call emergency services: 999\n- Stay on the line with emergency services\n\n2. **For immediate support:\n- Go to your nearest emergency room/A&E department\n- Call The Samaritans hotline (Multilingual): (852) 2896 0000\n- Call Suicide Prevention Service hotline (Cantonese): (852) 2382 0000\n\nAre you currently in a safe location?* If not, please seek immediate help using the emergency contacts above.\n*** Do you want to keep going with the screening?")
 
+
+Here are examples of how Dr Mind use tools and think step by step: {{patient: [patient's symptoms]}}, {{tool: [search_document_database]}}, {{think: [Dr. Mind's thought process]}}, {{Dr. Mind: [Dr. Mind's response]}}
+Example 1:
+Patient: I've been feeling really down for the past few months, can't sleep, and lost interest in everything.
+Think: i need more information to make a diagnosis
+Dr. Mind: Let me ask you a few questions to understand better. Have you been feeling sad or empty most of the day?
+Patient: Yes, almost every day.
+Tools: search_document_database
+Think: based on the retrieved information, the patient is likely to have Major Depressive Disorder, but i need more information to confirm the diagnosis
+Dr. Mind: Have you lost interest in activities you used to enjoy?
+Patient: Yes, I don't enjoy anything anymore.
+Think: based on the retrieved information, the patient is likely to have Major Depressive Disorder, but i need more information to confirm the diagnosis
+Dr. Mind: How has your sleep been?
+Patient: I can't sleep at night, but I sleep too much during the day.
+Think: based on the retrieved information, the patient is likely to have Major Depressive Disorder, but i need more information to confirm the diagnosis
+Dr. Mind: Have you had any thoughts about death or suicide?
+Patient: Yes, sometimes I think about it.
+Think: Based on the symptoms you've described, it seems that you may meet the criteria for Major Depressive Disorder.
+Dr. Mind: {{"result":["Major Depressive Disorder"], "probabilities":[0.8]}}
 
 """),
         MessagesPlaceholder(variable_name="chat_history"),
@@ -183,6 +181,7 @@ except Exception as e:
 
 # Store chat histories
 chat_histories: Dict[str, List[Any]] = {}
+internal_chat_histories: Dict[str, List[Any]] = {}  # New dictionary for internal history
 
 @router.post("/start")
 async def start_chat(current_user: dict = Depends(get_current_user)):
@@ -190,14 +189,16 @@ async def start_chat(current_user: dict = Depends(get_current_user)):
     user_id = str(current_user["id"])
     user_name = f"{current_user['first_name']} {current_user['last_name']}"
     
-    # Initialize chat history
+    # Initialize both chat histories
     chat_histories[user_id] = []
+    internal_chat_histories[user_id] = []
     
     # Generate greeting message
     greeting = f"Hello {user_name}, I'm Dr. Mind. I'm here to help assess your mental health concerns. How are you feeling recently?"
     
-    # Add greeting to history
+    # Add greeting to both histories
     chat_histories[user_id].append(AIMessage(content=greeting))
+    internal_chat_histories[user_id].append(AIMessage(content=greeting))
     
     return {
         "message": greeting
@@ -210,29 +211,43 @@ async def chat_message(
     """Process a chat message using the agent."""
     user_id = str(current_user["id"])
     
-    # Initialize chat history if it doesn't exist
-    if user_id not in chat_histories:
+    # Initialize chat histories if they don't exist
+    if user_id not in chat_histories or user_id not in internal_chat_histories:
         await start_chat(current_user)
     
     try:
-        # Add user message to history
-        chat_histories[user_id].append(HumanMessage(content=chat_message.message))
+        # Set current user ID for the search function
+        search_criteria.current_user_id = user_id
         
-        # Get response from agent
+        # Add user message to both histories
+        chat_histories[user_id].append(HumanMessage(content=chat_message.message))
+        internal_chat_histories[user_id].append(HumanMessage(content=chat_message.message))
+        
+        # Get response from agent using internal history
         response = await agent_executor.ainvoke({
             "input": chat_message.message,
-            "chat_history": chat_histories[user_id]
+            "chat_history": internal_chat_histories[user_id]
         })
         
-        # Add agent response to history
-        ai_message = AIMessage(content=response["output"])
-        chat_histories[user_id].append(ai_message)
+        # Process the response
+        response_content = response["output"]
+        
+        # Add clean response to user-facing history
+        chat_histories[user_id].append(AIMessage(content=response_content))
+        
+        # Add response to internal history
+        internal_chat_histories[user_id].append(AIMessage(content=response_content))
+        print(internal_chat_histories[user_id])
+        # Clear the current user ID
+        search_criteria.current_user_id = None
         
         return {
-            "message": response["output"]
+            "message": response_content
         }
         
     except Exception as e:
+        # Clear the current user ID in case of error
+        search_criteria.current_user_id = None
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing message: {str(e)}"

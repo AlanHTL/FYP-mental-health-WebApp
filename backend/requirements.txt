@@ -7,7 +7,7 @@ pymongo
 python-jose[cryptography]
 passlib
 passlib[bcrypt]
-bcrypt
+bcrypt == 4.0.1
 python-multipart
 aiohttp
 python-dotenv
