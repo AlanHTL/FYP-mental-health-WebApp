@@ -24,6 +24,7 @@ import {
   Divider,
   ListItemText,
   Badge,
+  CircularProgress,
 } from '@mui/material';
 import { 
   Search as SearchIcon, 
@@ -31,7 +32,8 @@ import {
   Description, 
   LocalHospital, 
   Psychology,
-  Assignment
+  Assignment,
+  Person
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../config';
@@ -47,9 +49,20 @@ interface Patient {
   sex: string;
 }
 
+interface Doctor {
+  id: number;
+  title: string;
+  first_name: string;
+  last_name: string;
+  clinic_name: string;
+  clinic_location: string;
+  clinic_contact: string;
+}
+
 interface DiagnosisReport {
   id: string;
   diagnosis: string;
+  details: string;
   symptoms: string[];
   recommendations: string[];
   created_at: string;
@@ -65,6 +78,8 @@ const LinkedPatients = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<DiagnosisReport | null>(null);
+  const [reportCreator, setReportCreator] = useState<Doctor | null>(null);
+  const [loadingCreator, setLoadingCreator] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [tabValue, setTabValue] = useState(0);
 
@@ -96,6 +111,18 @@ const LinkedPatients = () => {
     }
   };
 
+  const fetchDoctorInfo = async (doctorId: number) => {
+    setLoadingCreator(true);
+    try {
+      const response = await api.get(`/api/doctors/${doctorId}`);
+      setReportCreator(response.data);
+    } catch (error: any) {
+      console.error('Error fetching doctor info:', error);
+    } finally {
+      setLoadingCreator(false);
+    }
+  };
+
   const handleViewPatient = async (patient: Patient) => {
     setSelectedPatient(patient);
     await fetchPatientReports(patient.id);
@@ -108,8 +135,17 @@ const LinkedPatients = () => {
     }
   };
 
-  const handleViewReport = (report: DiagnosisReport) => {
+  const handleViewReport = async (report: DiagnosisReport) => {
     setSelectedReport(report);
+    
+    // Clear previous report creator
+    setReportCreator(null);
+    
+    // Fetch doctor info if it's a doctor-created report
+    if (report.is_physical && report.doctor_id) {
+      await fetchDoctorInfo(report.doctor_id);
+    }
+    
     setReportDialogOpen(true);
   };
 
@@ -121,6 +157,63 @@ const LinkedPatients = () => {
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  const renderReportCreator = () => {
+    if (!selectedReport) return null;
+    
+    if (selectedReport.is_physical) {
+      if (loadingCreator) {
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 2 }}>
+            <Person color="primary" />
+            <Typography variant="body2">
+              Loading creator information...
+            </Typography>
+            <CircularProgress size={16} />
+          </Box>
+        );
+      }
+      
+      if (reportCreator) {
+        return (
+          <Box sx={{ display: 'flex', flexDirection: 'column', mt: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+            <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+              <Person sx={{ mr: 1 }} /> Report created by:
+            </Typography>
+            <Typography variant="body2">
+              {reportCreator.title} {reportCreator.first_name} {reportCreator.last_name}
+            </Typography>
+            <Typography variant="body2" color="textSecondary">
+              Clinic: {reportCreator.clinic_name}
+            </Typography>
+            <Typography variant="body2" color="textSecondary">
+              Location: {reportCreator.clinic_location}
+            </Typography>
+            <Typography variant="body2" color="textSecondary">
+              Contact: {reportCreator.clinic_contact}
+            </Typography>
+          </Box>
+        );
+      }
+      
+      return (
+        <Box sx={{ mt: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+          <Typography variant="body2">
+            Report created by a healthcare professional.
+          </Typography>
+        </Box>
+      );
+    } else {
+      return (
+        <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, p: 2, bgcolor: '#f0f7ff', borderRadius: 1 }}>
+          <Psychology color="secondary" sx={{ mr: 1 }} />
+          <Typography variant="body2">
+            Report created by Dr. Mind, AI
+          </Typography>
+        </Box>
+      );
+    }
   };
 
   const filteredPatients = patients.filter((patient) =>
@@ -341,16 +434,25 @@ const LinkedPatients = () => {
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                 <Chip
                   icon={selectedReport.is_physical ? <LocalHospital /> : <Psychology />}
-                  label={selectedReport.is_physical ? 'Physical Consultation' : 'Mental Health Assessment'}
+                  label={selectedReport.is_physical ? 'Doctor Consultation' : 'Dr. Mind AI'}
                   color={selectedReport.is_physical ? 'primary' : 'secondary'}
                 />
               </Box>
 
-              <Typography variant="h6" gutterBottom>
+              {renderReportCreator()}
+
+              <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
                 Diagnosis
               </Typography>
               <Typography paragraph sx={{ pl: 2 }}>
                 {selectedReport.diagnosis}
+              </Typography>
+
+              <Typography variant="h6" gutterBottom>
+                Details
+              </Typography>
+              <Typography paragraph sx={{ pl: 2 }}>
+                {selectedReport.details}
               </Typography>
 
               <Typography variant="h6" gutterBottom>

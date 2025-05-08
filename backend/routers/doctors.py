@@ -4,8 +4,17 @@ from models import Doctor, DiagnosisReport, Patient
 from database import doctors_collection, diagnosis_reports_collection, patients_collection, linkage_requests_collection
 from routers.auth import get_current_user
 from datetime import datetime
+from pydantic import BaseModel
 
 router = APIRouter()
+
+# Create a request model for diagnosis creation
+class DiagnosisRequest(BaseModel):
+    patient_id: int
+    diagnosis: str
+    details: str
+    symptoms: List[str]
+    recommendations: List[str]
 
 @router.get("/", response_model=List[Doctor])
 async def get_all_doctors(current_user: dict = Depends(get_current_user)):
@@ -72,39 +81,57 @@ async def get_linked_patients(current_user: dict = Depends(get_current_user)):
 
 @router.post("/physical-diagnosis", response_model=DiagnosisReport)
 async def create_physical_diagnosis(
-    patient_id: int,
-    diagnosis: str,
-    symptoms: List[str],
-    recommendations: List[str],
+    request: DiagnosisRequest,
     current_user: dict = Depends(get_current_user)
 ):
+    print(f"DEBUG: Creating physical diagnosis for patient ID: {request.patient_id}")
+    print(f"DEBUG: Doctor ID: {current_user['id']}")
+    print(f"DEBUG: Diagnosis: {request.diagnosis}")
+    print(f"DEBUG: Details: {request.details}")
+    print(f"DEBUG: Symptoms: {request.symptoms}")
+    print(f"DEBUG: Recommendations: {request.recommendations}")
+    
     if current_user["user_type"] != "doctor":
+        print(f"ERROR: Unauthorized user type: {current_user['user_type']}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to create physical diagnosis reports"
         )
     
     # Check if patient exists
-    patient = await patients_collection.find_one({"id": patient_id})
+    patient = await patients_collection.find_one({"id": request.patient_id})
     if not patient:
+        print(f"ERROR: Patient with ID {request.patient_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Patient not found"
         )
     
+    print(f"DEBUG: Patient found: {patient['first_name']} {patient['last_name']}")
+    
     # Create diagnosis report
     diagnosis_report = {
         "id": str(datetime.utcnow().timestamp()),
-        "patient_id": patient_id,
+        "patient_id": request.patient_id,
         "doctor_id": current_user["id"],
-        "diagnosis": diagnosis,
-        "symptoms": symptoms,
-        "recommendations": recommendations,
+        "diagnosis": request.diagnosis,
+        "details": request.details,
+        "symptoms": request.symptoms,
+        "recommendations": request.recommendations,
         "created_at": datetime.utcnow(),
-        "is_physical": True
+        "is_physical": True  # Always true for doctor-created reports
     }
     
-    await diagnosis_reports_collection.insert_one(diagnosis_report)
+    try:
+        await diagnosis_reports_collection.insert_one(diagnosis_report)
+        print(f"DEBUG: Diagnosis report created successfully with ID: {diagnosis_report['id']}")
+    except Exception as e:
+        print(f"ERROR: Failed to create diagnosis report: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create diagnosis report: {str(e)}"
+        )
+    
     return diagnosis_report
 
 @router.get("/patient-reports/{patient_id}", response_model=List[DiagnosisReport])

@@ -10,13 +10,9 @@ import {
   Select,
   MenuItem,
   Chip,
-  OutlinedInput,
   SelectChangeEvent,
   Snackbar,
   Alert,
-  Autocomplete,
-  FormControlLabel,
-  Switch,
   Grid,
   Divider,
   CircularProgress,
@@ -26,7 +22,7 @@ import {
   DialogContentText,
   DialogTitle
 } from '@mui/material';
-import { ArrowBack, HealthAndSafety, Psychology, Add } from '@mui/icons-material';
+import { ArrowBack, Psychology, Add } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../config';
 
@@ -37,28 +33,18 @@ interface Patient {
   last_name: string;
 }
 
-// Common symptoms and recommendations for suggestion
-const COMMON_PHYSICAL_SYMPTOMS = [
-  'Fatigue', 'Headache', 'Fever', 'Cough', 'Shortness of breath',
-  'Nausea', 'Vomiting', 'Dizziness', 'Chest pain', 'Back pain',
-  'Joint pain', 'Muscle pain', 'Rash', 'Sore throat', 'Abdominal pain'
-];
-
+// Common symptoms and recommendations for mental health
 const COMMON_MENTAL_SYMPTOMS = [
-  'Depressed mood', 'Anxiety', 'Insomnia', 'Low energy', 'Poor concentration',
-  'Irritability', 'Mood swings', 'Social withdrawal', 'Loss of interest', 'Excessive worry',
-  'Panic attacks', 'Racing thoughts', 'Memory problems', 'Appetite changes', 'Feelings of hopelessness'
-];
-
-const COMMON_PHYSICAL_RECOMMENDATIONS = [
-  'Rest and adequate sleep', 'Stay hydrated', 'Take prescribed medication as directed',
-  'Regular exercise', 'Follow up in 2 weeks', 'Complete blood work in 1 week',
-  'Apply ice to affected area', 'Heat therapy for muscle pain', 'Monitor blood pressure daily',
-  'Maintain a balanced diet', 'Avoid alcohol and tobacco'
+  'Depressed mood', 'Anxiety', 'Sleep disturbance', 'Loss of interest',
+  'Fatigue', 'Poor concentration', 'Changes in appetite', 'Feelings of worthlessness',
+  'Suicidal thoughts', 'Panic attacks', 'Social withdrawal', 'Irritability',
+  'Racing thoughts', 'Excessive worry', 'Memory problems', 'Mood swings',
+  'Low self-esteem', 'Difficulty making decisions', 'Restlessness', 'Hopelessness'
 ];
 
 const COMMON_MENTAL_RECOMMENDATIONS = [
-  'Practice mindfulness meditation daily', 'Consider cognitive behavioral therapy',
+  'Practice mindfulness meditation daily',
+  'Consider cognitive behavioral therapy',
   'Establish a regular sleep schedule', 'Engage in regular physical activity',
   'Maintain social connections', 'Avoid alcohol and drugs', 'Consider medication options with psychiatrist',
   'Keep a mood journal', 'Join a support group', 'Practice stress management techniques',
@@ -72,11 +58,11 @@ const CreateDiagnosis = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<number | ''>('');
   const [diagnosis, setDiagnosis] = useState('');
+  const [details, setDetails] = useState('');
   const [symptoms, setSymptoms] = useState<string[]>([]);
   const [newSymptom, setNewSymptom] = useState('');
   const [recommendations, setRecommendations] = useState<string[]>([]);
   const [newRecommendation, setNewRecommendation] = useState('');
-  const [isPhysical, setIsPhysical] = useState(true);
   const [loading, setLoading] = useState(false);
   const [successDialog, setSuccessDialog] = useState(false);
   const [createdDiagnosisId, setCreatedDiagnosisId] = useState<string | null>(null);
@@ -85,10 +71,6 @@ const CreateDiagnosis = () => {
     message: '',
     severity: 'success' as 'success' | 'error',
   });
-
-  // Get suggested symptoms and recommendations based on diagnosis type
-  const suggestedSymptoms = isPhysical ? COMMON_PHYSICAL_SYMPTOMS : COMMON_MENTAL_SYMPTOMS;
-  const suggestedRecommendations = isPhysical ? COMMON_PHYSICAL_RECOMMENDATIONS : COMMON_MENTAL_RECOMMENDATIONS;
 
   useEffect(() => {
     fetchPatients();
@@ -103,10 +85,12 @@ const CreateDiagnosis = () => {
 
   const fetchPatients = async () => {
     try {
+      console.log("DEBUG: Fetching linked patients");
       const response = await api.get('/api/doctors/linked-patients');
+      console.log("DEBUG: Received linked patients:", response.data);
       setPatients(response.data);
     } catch (error) {
-      console.error('Error fetching patients:', error);
+      console.error('ERROR: Error fetching patients:', error);
       setSnackbar({
         open: true,
         message: 'Error fetching linked patients',
@@ -117,6 +101,7 @@ const CreateDiagnosis = () => {
 
   const handlePatientChange = (event: SelectChangeEvent<number>) => {
     setSelectedPatient(event.target.value as number);
+    console.log("DEBUG: Selected patient ID:", event.target.value);
   };
 
   const handleAddSymptom = () => {
@@ -144,7 +129,7 @@ const CreateDiagnosis = () => {
   };
 
   const handleSubmit = async () => {
-    if (!selectedPatient || !diagnosis || symptoms.length === 0 || recommendations.length === 0) {
+    if (!selectedPatient || !diagnosis || !details || symptoms.length === 0 || recommendations.length === 0) {
       setSnackbar({
         open: true,
         message: 'Please fill in all required fields',
@@ -154,29 +139,37 @@ const CreateDiagnosis = () => {
     }
 
     setLoading(true);
+    
+    // Prepare the request data
+    const requestData = {
+      patient_id: selectedPatient,
+      diagnosis: diagnosis,
+      details: details,
+      symptoms: symptoms,
+      recommendations: recommendations
+      // Note: is_physical is always true for doctor-created reports, set on the backend
+    };
+    
+    console.log("DEBUG: Sending diagnosis data:", requestData);
+    
     try {
       const response = await api.post(
-        '/api/diagnosis/create',
-        {
-          patient_id: selectedPatient,
-          diagnosis,
-          symptoms,
-          recommendations,
-          is_physical: isPhysical,
-        }
+        '/api/doctors/physical-diagnosis',
+        requestData
       );
 
+      console.log("DEBUG: Diagnosis created successfully:", response.data);
       setCreatedDiagnosisId(response.data.id);
       setSuccessDialog(true);
 
       // Reset form
       setSelectedPatient('');
       setDiagnosis('');
+      setDetails('');
       setSymptoms([]);
       setRecommendations([]);
-      setIsPhysical(true);
     } catch (error) {
-      console.error('Error creating diagnosis:', error);
+      console.error('ERROR: Failed to create diagnosis:', error);
       setSnackbar({
         open: true,
         message: 'Failed to create diagnosis report',
@@ -216,31 +209,13 @@ const CreateDiagnosis = () => {
         >
           Back to Home
         </Button>
-        <Typography variant="h5">
-          Create Diagnosis Report
+        <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center' }}>
+          <Psychology color="primary" sx={{ mr: 1 }} />
+          Create Mental Health Diagnosis
         </Typography>
       </Box>
       
       <Paper elevation={3} sx={{ p: 3 }}>
-        <FormControlLabel
-          control={
-            <Switch
-              checked={isPhysical}
-              onChange={(e) => setIsPhysical(e.target.checked)}
-              color="primary"
-            />
-          }
-          label={
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              {isPhysical ? <HealthAndSafety color="primary" sx={{ mr: 1 }} /> : <Psychology color="secondary" sx={{ mr: 1 }} />}
-              <Typography>
-                {isPhysical ? "Physical Health Diagnosis" : "Mental Health Diagnosis"}
-              </Typography>
-            </Box>
-          }
-          sx={{ mb: 3 }}
-        />
-
         <FormControl fullWidth sx={{ mb: 3 }}>
           <InputLabel>Select Patient</InputLabel>
           <Select
@@ -258,12 +233,22 @@ const CreateDiagnosis = () => {
 
         <TextField
           fullWidth
-          multiline
-          rows={4}
           label="Diagnosis"
           value={diagnosis}
           onChange={(e) => setDiagnosis(e.target.value)}
           sx={{ mb: 3 }}
+          placeholder="Enter the primary diagnosis (e.g., Major Depressive Disorder, Generalized Anxiety Disorder)"
+        />
+
+        <TextField
+          fullWidth
+          multiline
+          rows={4}
+          label="Diagnostic Details"
+          value={details}
+          onChange={(e) => setDetails(e.target.value)}
+          sx={{ mb: 3 }}
+          placeholder="Enter detailed information about the patient's experience, feelings, assessment results, and other diagnostic details (100-200 words)"
         />
 
         <Grid container spacing={3}>
@@ -302,10 +287,10 @@ const CreateDiagnosis = () => {
               
               <Divider sx={{ my: 2 }} />
               <Typography variant="subtitle2" color="textSecondary" gutterBottom>
-                Suggested Symptoms
+                Common Mental Health Symptoms
               </Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {suggestedSymptoms.map((symptom, index) => (
+                {COMMON_MENTAL_SYMPTOMS.map((symptom, index) => (
                   <Chip
                     key={index}
                     label={symptom}
@@ -354,10 +339,10 @@ const CreateDiagnosis = () => {
               
               <Divider sx={{ my: 2 }} />
               <Typography variant="subtitle2" color="textSecondary" gutterBottom>
-                Suggested Recommendations
+                Common Mental Health Recommendations
               </Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {suggestedRecommendations.map((recommendation, index) => (
+                {COMMON_MENTAL_RECOMMENDATIONS.map((recommendation, index) => (
                   <Chip
                     key={index}
                     label={recommendation}
@@ -381,6 +366,7 @@ const CreateDiagnosis = () => {
             loading ||
             !selectedPatient ||
             !diagnosis ||
+            !details ||
             symptoms.length === 0 ||
             recommendations.length === 0
           }
@@ -400,7 +386,7 @@ const CreateDiagnosis = () => {
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            The diagnosis report has been created and is now available to both you and the patient.
+            The mental health diagnosis report has been created and is now available to both you and the patient.
             Would you like to view the patient's details page?
           </DialogContentText>
         </DialogContent>

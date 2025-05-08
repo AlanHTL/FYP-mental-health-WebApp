@@ -60,6 +60,7 @@ class DiagnosisReport(BaseModel):
     patient_id: int
     doctor_id: Optional[int] = None
     diagnosis: str
+    details: str
     symptoms: List[str]
     recommendations: List[str]
     created_at: datetime = Field(default_factory=datetime.utcnow)

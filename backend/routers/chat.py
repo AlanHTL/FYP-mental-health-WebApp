@@ -1,13 +1,18 @@
 import os
 import traceback
+import json
+import re
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import Dict, Any, List
-from pydantic import BaseModel
+from typing import Dict, Any, List, Optional
+from pydantic import BaseModel, Field
+from datetime import datetime
+import httpx
 
 # Langchain Core Imports
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_core.output_parsers import PydanticOutputParser
 
 # Langchain Community & Tool Imports
 from langchain.agents import AgentExecutor, create_openai_tools_agent
@@ -16,6 +21,8 @@ from langchain_community.vectorstores import FAISS
 from langchain.docstore.document import Document
 
 from routers.auth import get_current_user
+from models import DiagnosisReport
+from database import diagnosis_reports_collection
 
 # Set up OpenAI credentials
 os.environ["OPENAI_API_KEY"] = "sk-UnNXXoNG6qqa1RUl24zKrakQaHBeyxqkxEtaVwGbSrGlRQxl"
@@ -25,6 +32,72 @@ router = APIRouter()
 
 class ChatMessage(BaseModel):
     message: str
+
+class AssessmentOption(BaseModel):
+    option_id: str
+
+# Assessment data
+DASS21_QUESTIONS = [
+    "I found it hard to wind down",
+    "I was aware of dryness of my mouth",
+    "I couldn't seem to experience any positive feeling at all",
+    "I experienced breathing difficulty (e.g., excessively rapid breathing, breathlessness in the absence of physical exertion)",
+    "I found it difficult to work up the initiative to do things",
+    "I tended to over-react to situations",
+    "I experienced trembling (e.g., in the hands)",
+    "I felt that I was using a lot of nervous energy",
+    "I was worried about situations in which I might panic and make a fool of myself",
+    "I felt that I had nothing to look forward to",
+    "I found myself getting agitated",
+    "I found it difficult to relax",
+    "I felt down-hearted and blue",
+    "I was intolerant of anything that kept me from getting on with what I was doing",
+    "I felt I was close to panic",
+    "I was unable to become enthusiastic about anything",
+    "I felt I wasn't worth much as a person",
+    "I felt that I was rather touchy",
+    "I was aware of the action of my heart in the absence of physical exertion (e.g. sense of heart rate increase, heart missing a beat)",
+    "I felt scared without any good reason",
+    "I felt that life was meaningless"
+]
+
+DASS21_OPTIONS = [
+    {"id": "0", "text": "Did not apply to me at all"},
+    {"id": "1", "text": "Applied to me to some degree, or some of the time"},
+    {"id": "2", "text": "Applied to me to a considerable degree, or a good part of time"},
+    {"id": "3", "text": "Applied to me very much, or most of the time"}
+]
+
+PCL5_QUESTIONS = [
+    "Repeated, disturbing, and unwanted memories of the stressful experience?",
+    "Repeated, disturbing dreams of the stressful experience?",
+    "Suddenly feeling or acting as if the stressful experience were actually happening again (as if you were actually back there reliving it)?",
+    "Feeling very upset when something reminded you of the stressful experience?",
+    "Having strong physical reactions when something reminded you of the stressful experience (for example, heart pounding, trouble breathing, sweating)?",
+    "Avoiding memories, thoughts, or feelings related to the stressful experience?",
+    "Avoiding external reminders of the stressful experience (for example, people, places, conversations, activities, objects, or situations)?",
+    "Trouble remembering important parts of the stressful experience?",
+    "Having strong negative beliefs about yourself, other people, or the world (for example, having thoughts such as: I am bad, there is something seriously wrong with me, no one can be trusted, the world is completely dangerous)?",
+    "Blaming yourself or someone else for the stressful experience or what happened after it?",
+    "Having strong negative feelings such as fear, horror, anger, guilt, or shame?",
+    "Loss of interest in activities that you used to enjoy?",
+    "Feeling distant or cut off from other people?",
+    "Trouble experiencing positive feelings (for example, being unable to feel happiness or have loving feelings for people close to you)?",
+    "Irritable behavior, angry outbursts, or acting aggressively?",
+    "Taking too many risks or doing things that could cause you harm?",
+    "Being \"superalert\" or watchful or on guard?",
+    "Feeling jumpy or easily startled?",
+    "Having difficulty concentrating?",
+    "Trouble falling or staying asleep?"
+]
+
+PCL5_OPTIONS = [
+    {"id": "0", "text": "Not at all"},
+    {"id": "1", "text": "A little bit"},
+    {"id": "2", "text": "Moderately"},
+    {"id": "3", "text": "Quite a bit"},
+    {"id": "4", "text": "Extremely"}
+]
 
 # Get the absolute path to the FAISS index directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -42,7 +115,7 @@ try:
     # Initialize chat model
     chat_model = ChatOpenAI(
         model="gpt-3.5-turbo",
-        temperature=0.6,
+        temperature=0.7,
         base_url=os.environ["OPENAI_API_BASE"],
         api_key=os.environ["OPENAI_API_KEY"]
     )
@@ -131,6 +204,7 @@ step by step process:
 *Output Guidelines:*
 - Think step by step and explain your reasoning.
 - Do not show your thinking in the conversation, remove all the text for the thinking.
+- You are not allowed to tell the patient about your thinking of classification, just ask questions and make a diagnosis using Json format output.
 - Do not tell the patient about the retrieved information, for example, do not say "Based on the information retrieved from the database, the patient is likely to have [diagnosis]".
 - Just focus on asking questions for the classification of the disorder.
 - The retrieved information is only for the classification of the disorder, do not tell the patient anything about the retrieved information.
@@ -139,7 +213,7 @@ step by step process:
 - Ask one question at a time to avoid overwhelming the patient.
 - Provide examples answers of the questions you are asking.
 - Before making a diagnosis, verify that the patient meets the required criteria.
-- Do not make any prediction about the disorder, like "it seems to align with [diagnosis]" or "it might be [diagnosis]", just focus on asking questions for getting more information.
+- You are not allowed to make any diagnosis prediction about the disorder using sentence, like "Based on your symptoms, it seems to align with [diagnosis]" or "it might be [diagnosis]", just focus on asking questions for getting more information. If the patient recived a diagnosis in normal sentence, the patient will feel confused and the diagnosis will not be accurate.
 - Once you think that you find a diagnosis, output the result in JSON format.
 - For the JSON output, check if there are any text in front of the JSON or after the JSON in the response, if there are, remove them.
 - The patient could be normal, please think step by step before making a diagnosis, normal diagnosis is "result": ["Normal"]
@@ -183,6 +257,136 @@ except Exception as e:
 chat_histories: Dict[str, List[Any]] = {}
 internal_chat_histories: Dict[str, List[Any]] = {}  # New dictionary for internal history
 
+# Store user assessment states
+user_assessment_states: Dict[str, Dict[str, Any]] = {}
+
+def is_diagnosis_result(message: str) -> Optional[Dict]:
+    """Check if the message is a diagnosis result in JSON format."""
+    try:
+        # Look for JSON pattern in the message
+        json_match = re.search(r'({(?:"result":|\'result\':).*})', message)
+        if json_match:
+            json_str = json_match.group(1)
+            # Parse the JSON
+            result = json.loads(json_str)
+            if 'result' in result and 'probabilities' in result:
+                return result
+        return None
+    except:
+        return None
+
+def get_assessment_type(diagnosis: List[str]) -> Optional[str]:
+    """Determine which assessment to use based on diagnosis."""
+    depression_anxiety_disorders = [
+        "Major Depressive Disorder", 
+        "Persistent Depressive Disorder",
+        "Generalized Anxiety Disorder", 
+        "Panic Disorder"
+    ]
+    
+    ptsd_disorders = ["Posttraumatic Stress Disorder"]
+    
+    for disorder in diagnosis:
+        if any(d.lower() in disorder.lower() for d in depression_anxiety_disorders):
+            return "DASS21"
+        elif any(d.lower() in disorder.lower() for d in ptsd_disorders):
+            return "PCL5"
+    
+    return None
+
+def get_assessment_question(assessment_type: str, question_index: int) -> Dict:
+    """Get assessment question and options based on type and index."""
+    if assessment_type == "DASS21":
+        if question_index < len(DASS21_QUESTIONS):
+            return {
+                "question": f"Question {question_index + 1}/{len(DASS21_QUESTIONS)}: {DASS21_QUESTIONS[question_index]}",
+                "options": DASS21_OPTIONS
+            }
+        return {"question": "Assessment completed", "options": []}
+    
+    elif assessment_type == "PCL5":
+        if question_index < len(PCL5_QUESTIONS):
+            return {
+                "question": f"Question {question_index + 1}/{len(PCL5_QUESTIONS)}: {PCL5_QUESTIONS[question_index]}",
+                "options": PCL5_OPTIONS
+            }
+        return {"question": "Assessment completed", "options": []}
+    
+    return {"question": "No assessment needed", "options": []}
+
+def calculate_dass21_scores(answers: List[int]) -> Dict:
+    """Calculate DASS-21 scores for stress, anxiety, and depression."""
+    # Stress: Questions 1, 6, 8, 11, 12, 14, 18 (indices 0, 5, 7, 10, 11, 13, 17)
+    stress = sum([answers[i] for i in [0, 5, 7, 10, 11, 13, 17]]) * 2
+    
+    # Anxiety: Questions 2, 4, 7, 9, 15, 19, 20 (indices 1, 3, 6, 8, 14, 18, 19)
+    anxiety = sum([answers[i] for i in [1, 3, 6, 8, 14, 18, 19]]) * 2
+    
+    # Depression: Questions 3, 5, 10, 13, 16, 17, 21 (indices 2, 4, 9, 12, 15, 16, 20)
+    depression = sum([answers[i] for i in [2, 4, 9, 12, 15, 16, 20]]) * 2
+    
+    # Determine severity levels
+    stress_level = "Normal"
+    if stress >= 34:
+        stress_level = "Extremely Severe"
+    elif stress >= 26:
+        stress_level = "Severe"
+    elif stress >= 19:
+        stress_level = "Moderate"
+    elif stress >= 15:
+        stress_level = "Mild"
+    
+    anxiety_level = "Normal"
+    if anxiety >= 20:
+        anxiety_level = "Extremely Severe"
+    elif anxiety >= 15:
+        anxiety_level = "Severe"
+    elif anxiety >= 10:
+        anxiety_level = "Moderate"
+    elif anxiety >= 8:
+        anxiety_level = "Mild"
+    
+    depression_level = "Normal"
+    if depression >= 28:
+        depression_level = "Extremely Severe"
+    elif depression >= 21:
+        depression_level = "Severe"
+    elif depression >= 14:
+        depression_level = "Moderate"
+    elif depression >= 10:
+        depression_level = "Mild"
+    
+    return {
+        "stress": {
+            "score": stress,
+            "level": stress_level
+        },
+        "anxiety": {
+            "score": anxiety,
+            "level": anxiety_level
+        },
+        "depression": {
+            "score": depression,
+            "level": depression_level
+        }
+    }
+
+def calculate_pcl5_score(answers: List[int]) -> Dict:
+    """Calculate PCL-5 score for PTSD."""
+    total_score = sum(answers)
+    
+    # Determine severity based on total score
+    severity = "None"
+    if total_score >= 33:
+        severity = "Probable PTSD"
+    elif total_score >= 15:
+        severity = "Some PTSD symptoms"
+    
+    return {
+        "total_score": total_score,
+        "severity": severity
+    }
+
 @router.post("/start")
 async def start_chat(current_user: dict = Depends(get_current_user)):
     """Start a new chat session with a greeting message."""
@@ -192,6 +396,16 @@ async def start_chat(current_user: dict = Depends(get_current_user)):
     # Initialize both chat histories
     chat_histories[user_id] = []
     internal_chat_histories[user_id] = []
+    
+    # Initialize assessment state
+    user_assessment_states[user_id] = {
+        "in_assessment": False,
+        "assessment_type": None,
+        "question_index": 0,
+        "answers": [],
+        "diagnosis": None,
+        "completed": False
+    }
     
     # Generate greeting message
     greeting = f"Hello {user_name}, I'm Dr. Mind. I'm here to help assess your mental health concerns. How are you feeling recently?"
@@ -215,13 +429,130 @@ async def chat_message(
     if user_id not in chat_histories or user_id not in internal_chat_histories:
         await start_chat(current_user)
     
+    # Get assessment state
+    assessment_state = user_assessment_states.get(user_id, {
+        "in_assessment": False,
+        "assessment_type": None,
+        "question_index": 0,
+        "answers": [],
+        "diagnosis": None,
+        "completed": False
+    })
+    
     try:
+        # Check if we're in an assessment
+        if assessment_state["in_assessment"]:
+            # Add user message to both histories
+            chat_histories[user_id].append(HumanMessage(content=chat_message.message))
+            internal_chat_histories[user_id].append(HumanMessage(content=chat_message.message))
+            
+            try:
+                # Parse user's answer (should be a number corresponding to option)
+                answer = int(chat_message.message)
+                assessment_state["answers"].append(answer)
+                
+                # Move to next question
+                assessment_state["question_index"] += 1
+                
+                # Check if assessment is complete
+                if (assessment_state["assessment_type"] == "DASS21" and assessment_state["question_index"] >= len(DASS21_QUESTIONS)) or \
+                   (assessment_state["assessment_type"] == "PCL5" and assessment_state["question_index"] >= len(PCL5_QUESTIONS)):
+                    
+                    # Calculate results
+                    if assessment_state["assessment_type"] == "DASS21":
+                        results = calculate_dass21_scores(assessment_state["answers"])
+                        result_message = f"""
+DASS-21 Assessment Results:
+
+Depression: {results['depression']['score']} - {results['depression']['level']}
+Anxiety: {results['anxiety']['score']} - {results['anxiety']['level']}
+Stress: {results['stress']['score']} - {results['stress']['level']}
+
+Thank you for completing the assessment. Would you like to generate a diagnosis report?
+                        """
+                    else:  # PCL5
+                        results = calculate_pcl5_score(assessment_state["answers"])
+                        result_message = f"""
+PCL-5 Assessment Results:
+
+Total Score: {results['total_score']}
+Severity: {results['severity']}
+
+Thank you for completing the assessment. Would you like to generate a diagnosis report?
+                        """
+                    
+                    # Add assessment results to chat history
+                    chat_histories[user_id].append(AIMessage(content=result_message))
+                    internal_chat_histories[user_id].append(AIMessage(content=f"Assessment results: {json.dumps(results)}"))
+                    
+                    # End assessment
+                    assessment_state["in_assessment"] = False
+                    assessment_state["completed"] = True
+                    user_assessment_states[user_id] = assessment_state
+                    
+                    return {
+                        "message": result_message,
+                        "show_report_button": True
+                    }
+                
+                # Get next question
+                question_data = get_assessment_question(
+                    assessment_state["assessment_type"], 
+                    assessment_state["question_index"]
+                )
+                
+                # Save state
+                user_assessment_states[user_id] = assessment_state
+                
+                # Add question to chat history
+                response_message = question_data["question"]
+                chat_histories[user_id].append(AIMessage(content=response_message))
+                internal_chat_histories[user_id].append(AIMessage(content=response_message))
+                
+                return {
+                    "message": response_message,
+                    "assessment": True,
+                    "options": question_data["options"]
+                }
+            
+            except ValueError:
+                # Invalid answer format
+                error_message = "Please select one of the provided options by entering the corresponding number."
+                chat_histories[user_id].append(AIMessage(content=error_message))
+                internal_chat_histories[user_id].append(AIMessage(content=error_message))
+                
+                # Re-send the current question
+                question_data = get_assessment_question(
+                    assessment_state["assessment_type"], 
+                    assessment_state["question_index"]
+                )
+                
+                return {
+                    "message": error_message,
+                    "assessment": True,
+                    "options": question_data["options"]
+                }
+                
+        # Regular chat flow (not in assessment)
         # Set current user ID for the search function
         search_criteria.current_user_id = user_id
         
         # Add user message to both histories
         chat_histories[user_id].append(HumanMessage(content=chat_message.message))
         internal_chat_histories[user_id].append(HumanMessage(content=chat_message.message))
+        
+        # Check for report generation command
+        if chat_message.message.lower() in ["generate report", "generate diagnosis report"]:
+            # Generate a diagnosis report
+            report = await generate_diagnosis_report(user_id, current_user)
+            
+            # Add report to chat history
+            chat_histories[user_id].append(AIMessage(content=report))
+            internal_chat_histories[user_id].append(AIMessage(content=report))
+            
+            return {
+                "message": report
+            }
         
         # Get response from agent using internal history
         response = await agent_executor.ainvoke({
@@ -232,12 +563,75 @@ async def chat_message(
         # Process the response
         response_content = response["output"]
         
-        # Add clean response to user-facing history
-        chat_histories[user_id].append(AIMessage(content=response_content))
+        # Check if the response is a diagnosis result
+        diagnosis_result = is_diagnosis_result(response_content)
+        if diagnosis_result:
+            # Store the diagnosis
+            assessment_state["diagnosis"] = diagnosis_result["result"]
+            
+            # Check if we need to start an assessment
+            assessment_type = get_assessment_type(diagnosis_result["result"])
+            if assessment_type:
+                # Start assessment
+                assessment_state["in_assessment"] = True
+                assessment_state["assessment_type"] = assessment_type
+                assessment_state["question_index"] = 0
+                assessment_state["answers"] = []
+                
+                # Save state
+                user_assessment_states[user_id] = assessment_state
+                
+                # Add diagnosis to chat history
+                chat_histories[user_id].append(AIMessage(content=response_content))
+                internal_chat_histories[user_id].append(AIMessage(content=response_content))
+                
+                # Get first assessment question
+                question_data = get_assessment_question(assessment_type, 0)
+                
+                # Add assessment introduction and question to chat history
+                assessment_intro = f"""
+Based on your responses, I'd like to proceed with a standardized assessment to gain more detailed insights.
+
+I'll be asking you several questions from the {assessment_type} assessment. Please select the option that best describes your experience. The questions are as follows: \n
+
+
+{question_data["question"]}
+                """
+                
+                chat_histories[user_id].append(AIMessage(content=assessment_intro))
+                internal_chat_histories[user_id].append(AIMessage(content=assessment_intro))
+                
+                return {
+                    "message": assessment_intro,
+                    "assessment": True,
+                    "options": question_data["options"]
+                }
+            else:
+                # No assessment needed, just add diagnosis to chat history
+                chat_histories[user_id].append(AIMessage(content=response_content))
+                internal_chat_histories[user_id].append(AIMessage(content=response_content))
+                
+                # Indicate assessment is completed (skipped)
+                assessment_state["completed"] = True
+                user_assessment_states[user_id] = assessment_state
+                
+                # Offer to generate a report
+                report_offer = "Would you like to generate a diagnosis report?"
+                chat_histories[user_id].append(AIMessage(content=report_offer))
+                internal_chat_histories[user_id].append(AIMessage(content=report_offer))
+                
+                return {
+                    "message": response_content,
+                    "diagnosis": True,
+                    "follow_up": report_offer,
+                    "show_report_button": True
+                }
         
-        # Add response to internal history
+        # Add response to both histories
+        chat_histories[user_id].append(AIMessage(content=response_content))
         internal_chat_histories[user_id].append(AIMessage(content=response_content))
         print(internal_chat_histories[user_id])
+        
         # Clear the current user ID
         search_criteria.current_user_id = None
         
@@ -251,4 +645,157 @@ async def chat_message(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing message: {str(e)}"
-        ) 
+        )
+
+# Define the response schema for the report
+class DiagnosisReportSchema(BaseModel):
+    diagnosis: str = Field(description="The diagnosis result, which is the disorder name")
+    details: str = Field(description="Detailed information about the patient's experience, feelings, assessment results, and other diagnostic details (100-200 words)")
+    symptoms: List[str] = Field(description="List of reported symptoms and observations")
+    recommendations: List[str] = Field(description="List of recommended actions and treatments")
+    llm_analysis: Dict[str, Any] = Field(description="Additional analysis and insights from the LLM")
+
+# Create the parser
+parser = PydanticOutputParser(pydantic_object=DiagnosisReportSchema)
+
+# Create the format instructions
+format_instructions = parser.get_format_instructions()
+
+# Create the prompt template
+REPORT_TEMPLATE = """You are a mental health professional tasked with generating a comprehensive diagnosis report.
+
+Based on the following information:
+Disorder result: {diagnosis}
+Assessment results: {assessment_results}
+Chat history: {chat_history}
+
+Generate a structured diagnosis report that includes:
+1. The diagnosis result - a concise statement of the diagnosis
+2. A detailed narrative (details field) describing the patient's experiences, feelings, assessment results, duration of symptoms, and other relevant information about their condition (100-200 words)
+3. A comprehensive list of symptoms and observations
+4. Specific recommendations for treatment and next steps
+5. Additional analysis and insights
+
+{format_instructions}
+
+Remember to be professional, compassionate, and thorough in your analysis."""
+
+report_prompt = ChatPromptTemplate.from_template(REPORT_TEMPLATE)
+
+# Create the chain
+report_chain = report_prompt | chat_model | parser
+
+async def generate_diagnosis_report(user_id: str, current_user: dict) -> str:
+    """Generate a diagnosis report based on chat history and assessment results."""
+    try:
+        print(f"DEBUG: Generating diagnosis report for user ID: {user_id}")
+        
+        # Get assessment state
+        assessment_state = user_assessment_states.get(user_id, {})
+        
+        # Create a summary of the diagnosis and assessment results
+        diagnosis = assessment_state.get("diagnosis", ["Unknown"])
+        print(f"DEBUG: Diagnosis from assessment: {diagnosis}")
+        
+        # Extract assessment results from chat history
+        assessment_results = None
+        for message in internal_chat_histories[user_id]:
+            if isinstance(message, AIMessage) and message.content.startswith("Assessment results:"):
+                try:
+                    assessment_results = json.loads(message.content.replace("Assessment results:", "").strip())
+                    print(f"DEBUG: Found assessment results: {assessment_results}")
+                except Exception as e:
+                    print(f"ERROR: Failed to parse assessment results: {str(e)}")
+        
+        if not assessment_results:
+            print("DEBUG: No assessment results found")
+        
+        # Generate structured report using the chain
+        print("DEBUG: Generating structured report using LangChain")
+        report_data = await report_chain.ainvoke({
+            "diagnosis": diagnosis,
+            "assessment_results": assessment_results,
+            "chat_history": internal_chat_histories[user_id],
+            "format_instructions": format_instructions
+        })
+        
+        print(f"DEBUG: Report data generated with diagnosis: {report_data.diagnosis}")
+        print(f"DEBUG: Report details: {report_data.details}")
+        print(f"DEBUG: Report symptoms: {report_data.symptoms}")
+        print(f"DEBUG: Report recommendations: {report_data.recommendations}")
+        
+        # Create diagnosis report directly using the collection
+        diagnosis_report = {
+            "id": str(datetime.utcnow().timestamp()),
+            "patient_id": current_user["id"],
+            "diagnosis": report_data.diagnosis,
+            "details": report_data.details,
+            "symptoms": report_data.symptoms,
+            "recommendations": report_data.recommendations,
+            "created_at": datetime.utcnow(),
+            "is_physical": False,  # AI-generated reports are marked as non-physical
+            "llm_analysis": report_data.llm_analysis
+        }
+        
+        print(f"DEBUG: Saving diagnosis report to database with ID: {diagnosis_report['id']}")
+        
+        try:
+            # Save to database
+            await diagnosis_reports_collection.insert_one(diagnosis_report)
+            print("DEBUG: Diagnosis report saved successfully")
+        except Exception as e:
+            print(f"ERROR: Failed to save diagnosis report to database: {str(e)}")
+            raise
+        
+        # Format the report for display
+        print("DEBUG: Formatting report for display")
+        formatted_report = f"""
+# Mental Health Diagnosis Report
+
+## Diagnosis
+{report_data.diagnosis}
+
+## Details
+{report_data.details}
+
+## Symptoms
+{chr(10).join(f"- {symptom}" for symptom in report_data.symptoms)}
+
+## Recommendations
+{chr(10).join(f"- {recommendation}" for recommendation in report_data.recommendations)}
+
+## Additional Analysis
+{json.dumps(report_data.llm_analysis, indent=2)}
+
+*This report has been generated based on your interaction with Dr. Mind and has been saved to your records. Please review it in the View Reports page.*
+"""
+        
+        return formatted_report
+    
+    except Exception as e:
+        error_msg = f"Error generating report: {str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR: {error_msg}")
+        return f"Error generating report: {str(e)}"
+
+@router.post("/report")
+async def generate_report(current_user: dict = Depends(get_current_user)):
+    """Generate a diagnosis report for the user."""
+    user_id = str(current_user["id"])
+    
+    if user_id not in internal_chat_histories:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No chat history found. Please start a conversation first."
+        )
+    
+    # Generate report
+    report = await generate_diagnosis_report(user_id, current_user)
+    
+    # Add report to chat history
+    chat_histories[user_id].append(AIMessage(content=report))
+    internal_chat_histories[user_id].append(AIMessage(content=report))
+    
+    return {
+        "message": "Report has been generated and saved. You can view it in the View Reports page.",
+        "report": report
+    } 
