@@ -187,7 +187,19 @@ const ChatbotDiagnosis: FC = () => {
       // Add the report to messages
       setMessages((prevMessages: Message[]) => [
         ...prevMessages, 
-        { role: 'assistant', content: response.data.message }
+        { role: 'assistant', content: response.data.message },
+        { role: 'assistant', content: `
+# Report Saved Successfully
+
+Your diagnosis report has been saved and is now available in your records.
+
+To access your report:
+1. Go to the "View Reports" page from your dashboard
+2. You'll find your latest report at the top of the list
+3. Click "View Details" to see the full report
+
+*You can access your reports at any time to review your diagnosis, symptoms, and recommendations.*
+`}
       ]);
 
       // Hide the report button after generating
