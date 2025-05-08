@@ -25,8 +25,8 @@ from models import DiagnosisReport
 from database import diagnosis_reports_collection
 
 # Set up OpenAI credentials
-os.environ["OPENAI_API_KEY"] = "sk-UnNXXoNG6qqa1RUl24zKrakQaHBeyxqkxEtaVwGbSrGlRQxl"
-os.environ["OPENAI_API_BASE"] = "https://xiaoai.plus/v1"
+os.environ["OPENAI_API_KEY"] = os.getenv("API_KEY")
+os.environ["OPENAI_API_BASE"] = os.getenv("API_BASE")
 
 router = APIRouter()
 
