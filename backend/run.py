@@ -3,6 +3,11 @@ import sys
 from importlib import metadata
 import uvicorn
 
+
+def signal_handler(sig, frame):
+    print('\nShutting down gracefully...')
+    sys.exit(0)
+
 def check_requirements():
     """Check if all required packages are installed and install missing ones."""
     try:
@@ -43,9 +48,13 @@ if __name__ == "__main__":
     print("Checking requirements...")
     check_requirements()
     print("\nStarting server...")
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True  # Enable auto-reload during development
-    ) 
+    try:
+        uvicorn.run(
+            "main:app",
+            host="0.0.0.0",
+            port=8000,
+            reload=True  # Enable auto-reload during development
+        ) 
+    except KeyboardInterrupt:
+        print('\nShutting down gracefully...')
+        sys.exit(0)   

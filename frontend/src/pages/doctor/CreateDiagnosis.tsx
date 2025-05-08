@@ -65,7 +65,6 @@ const CreateDiagnosis = () => {
   const [newRecommendation, setNewRecommendation] = useState('');
   const [loading, setLoading] = useState(false);
   const [successDialog, setSuccessDialog] = useState(false);
-  const [createdDiagnosisId, setCreatedDiagnosisId] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
@@ -81,7 +80,7 @@ const CreateDiagnosis = () => {
     if (preSelectedPatientId && preSelectedPatientId !== selectedPatient) {
       setSelectedPatient(preSelectedPatientId);
     }
-  }, [preSelectedPatientId, patients]);
+  }, [preSelectedPatientId, patients, selectedPatient]);
 
   const fetchPatients = async () => {
     try {
@@ -159,7 +158,6 @@ const CreateDiagnosis = () => {
       );
 
       console.log("DEBUG: Diagnosis created successfully:", response.data);
-      setCreatedDiagnosisId(response.data.id);
       setSuccessDialog(true);
 
       // Reset form
