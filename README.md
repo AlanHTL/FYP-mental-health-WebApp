@@ -1,4 +1,4 @@
-# Mental Health Diagnosis System
+# Mental Health Diagnosis System setup menu
 
 ## System Requirements
 - **Python:** 3.9 or higher (recommended: 3.10+)
@@ -27,13 +27,13 @@ MONGO_DB=mental_health_db
 
 # OpenAI API
 API_KEY=your_openai_api_key
-API_BASE=https://api.openai.com/v1
+API_BASE=https://your-api-link/v1
 ```
 
 - `MONGO_URI`: MongoDB connection string (default: `mongodb://localhost:27017`)
 - `MONGO_DB`: Database name (default: `mental_health_db`)
-- `API_KEY`: Your OpenAI API key
-- `API_BASE`: OpenAI API base URL (default: `https://api.openai.com/v1`or `https://xiaoai.plus/v1`)
+- `API_KEY`: Your OpenAI API key (default: `sk-UnNXXoNG6qqa1RUl24zKrakQaHBeyxqkxEtaVwGbSrGlRQxl`)
+- `API_BASE`: OpenAI API base URL (default: `https://xiaoai.plus/v1`)
 
 ### 2. Auto start backend
 
