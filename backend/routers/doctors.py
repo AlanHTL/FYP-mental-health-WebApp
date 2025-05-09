@@ -3,10 +3,14 @@ from typing import List
 from models import Doctor, DiagnosisReport, Patient
 from database import doctors_collection, diagnosis_reports_collection, patients_collection, linkage_requests_collection
 from routers.auth import get_current_user
-from datetime import datetime
+from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 router = APIRouter()
+
+def get_utc_plus_8():
+    """Returns current datetime in UTC+8"""
+    return datetime.utcnow() + timedelta(hours=8)
 
 # Create a request model for diagnosis creation
 class DiagnosisRequest(BaseModel):
@@ -111,14 +115,14 @@ async def create_physical_diagnosis(
     
     # Create diagnosis report
     diagnosis_report = {
-        "id": str(datetime.utcnow().timestamp()),
+        "id": str(get_utc_plus_8().timestamp()),
         "patient_id": request.patient_id,
         "doctor_id": current_user["id"],
         "diagnosis": request.diagnosis,
         "details": request.details,
         "symptoms": request.symptoms,
         "recommendations": request.recommendations,
-        "created_at": datetime.utcnow(),
+        "created_at": get_utc_plus_8(),
         "is_physical": True  # Always true for doctor-created reports
     }
     

@@ -5,7 +5,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timedelta
 import httpx
 
 # Langchain Core Imports
@@ -685,6 +685,10 @@ report_prompt = ChatPromptTemplate.from_template(REPORT_TEMPLATE)
 # Create the chain
 report_chain = report_prompt | chat_model | parser
 
+def get_utc_plus_8():
+    """Returns current datetime in UTC+8"""
+    return datetime.utcnow() + timedelta(hours=8)
+
 async def generate_diagnosis_report(user_id: str, current_user: dict) -> str:
     """Generate a diagnosis report based on chat history and assessment results."""
     try:
@@ -726,13 +730,13 @@ async def generate_diagnosis_report(user_id: str, current_user: dict) -> str:
         
         # Create diagnosis report directly using the collection
         diagnosis_report = {
-            "id": str(datetime.utcnow().timestamp()),
+            "id": str(get_utc_plus_8().timestamp()),
             "patient_id": current_user["id"],
             "diagnosis": report_data.diagnosis,
             "details": report_data.details,
             "symptoms": report_data.symptoms,
             "recommendations": report_data.recommendations,
-            "created_at": datetime.utcnow(),
+            "created_at": get_utc_plus_8(),
             "is_physical": False,  # AI-generated reports are marked as non-physical
             "llm_analysis": report_data.llm_analysis
         }
