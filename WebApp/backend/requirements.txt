@@ -1,0 +1,23 @@
+fastapi
+uvicorn
+pydantic
+pydantic[email]
+motor
+pymongo
+python-jose[cryptography]
+passlib
+passlib[bcrypt]
+bcrypt == 4.0.1
+python-multipart
+aiohttp
+python-dotenv
+openai
+langchain
+langchain-core
+langchain-openai
+langchain-community
+faiss-cpu
+tiktoken
+pytest
+pytest-asyncio
+httpx
