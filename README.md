@@ -1,5 +1,8 @@
 # Mental Health Diagnosis System setup menu
-
+## WebApp functions:
+Chatbot diagnosis function - RAG tool, Assessment, report generate
+Report Viewer function
+Patient-Doctor linkage function
 ## System Requirements
 - **Python:** 3.9 or higher (recommended: 3.10+)
 - **Node.js:** 16.x or higher (recommended: 18.x+)
