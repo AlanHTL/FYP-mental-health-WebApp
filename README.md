@@ -37,8 +37,8 @@ API_BASE=https://your-api-link/v1
 
 - `MONGO_URI`: MongoDB connection string (default: `mongodb://localhost:27017`)
 - `MONGO_DB`: Database name (default: `mental_health_db`)
-- `API_KEY`: Your OpenAI API key (default: `sk-UnNXXoNG6qqa1RUl24zKrakQaHBeyxqkxEtaVwGbSrGlRQxl`)
-- `API_BASE`: OpenAI API base URL (default: `https://xiaoai.plus/v1`)
+- `API_KEY`: Your OpenAI API key (default: `sk-`)
+- `API_BASE`: OpenAI API base URL (default: `https://xxxxxxxxx/v1`)
 
 ### 2. Auto start backend
 
@@ -46,10 +46,7 @@ Find the start_server.bat in .\backend
 double click and run the start_server.bat
 
 ### 3. Auto start frontend
-
-Find the start_frontend.bat in .\frontend
-double click and run the start_frontend.bat
----
+Find the start_frontend.bat in .\frontend double click and run the start_frontend.bat
 
 ## Backend Manual Setup
 
